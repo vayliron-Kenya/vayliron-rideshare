@@ -5,6 +5,7 @@ const TABS = [
   { key: "people", href: "/company/people", label: "People" },
   { key: "policy", href: "/company/policy", label: "Policy" },
   { key: "invoices", href: "/company/invoices", label: "Invoices" },
+  { key: "activity", href: "/company/activity", label: "Activity" },
 ] as const;
 
 export type CompanyTab = (typeof TABS)[number]["key"];

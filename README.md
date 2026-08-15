@@ -76,7 +76,9 @@ headcount, attendance against no-shows, and an indicative CO₂e figure.
 seat they hold on a future departure. `/company/policy` sets the employer share,
 the monthly per-employee cap and the billing address, with a live table of what
 each fare zone will cost staff. `/company/invoices` is the monthly bill with a
-line per rider and a CSV export.
+line per rider and a CSV export. `/company/activity` is their own slice of the
+audit trail — their admins' changes, plus anything Vayliron did to their
+account.
 
 ### Vayliron control panel
 
@@ -86,7 +88,8 @@ incidents, with a per-line rollup and what is on the road right now.
 `/ops/trips/[trip]` is where a controller intervenes — put a run behind
 schedule, swap the bus or the driver, cancel it with a reason, or resolve an
 incident. `/ops/fleet` and `/ops/clients` cover utilisation and revenue;
-`/ops/network` (network admins only) suspends lines and adds stages.
+`/ops/audit` is the network-wide trail of who changed what; `/ops/network`
+(network admins only) suspends lines and adds stages.
 
 ## How the numbers work
 
@@ -118,6 +121,20 @@ arrival time for both is how a shuttle service loses its riders.
 tracker has reported in the last three minutes — so a scheduled bus still shows
 a moving, honest estimate instead of an empty map.
 
+**The audit trail** takes an `Actor` as a required argument on every
+administrative write, so an unattributed change is a compile error rather than
+something a future caller forgets. It is scoped on purpose: cancelling a run,
+moving a bus, editing the subsidy, adding or removing staff. Boardings and
+rider bookings are not duplicated into it — a boarding already has
+`bookings.boarded_at`, and burying twenty real entries under fourteen thousand
+routine ones makes the trail useless. Actor and subject names are stored as
+they read at the time, so the record still says "Naliaka Wekesa cancelled VL-01
+06:00" after the person leaves and the departure is purged. A cancellation that
+affects a client's riders is written twice — once for the network log, once
+scoped to that client — so each side sees it from their own angle. Audit writes
+never throw into the caller: a full disk must not take the network down with
+it.
+
 **Delays** are a first-class property of a departure, not a note. A driver or
 controller reports minutes; every downstream arrival time, rider ETA and tracked
 position shifts by them. Incidents compound — two on one run add up — and the
@@ -133,8 +150,8 @@ app/
   dashboard/ book/ bookings/ track/   rider app
   routes/[slug]/           timetable, stage list, departures
   drive/[tripId]/          driver app
-  company/{people,policy,invoices}/   client control panel
-  ops/{trips,fleet,clients,network}/  Vayliron control panel
+  company/{people,policy,invoices,activity}/  client control panel
+  ops/{trips,fleet,clients,audit,network}/    Vayliron control panel
   api/trips/[tripId]/position         polling endpoint for the map
   api/company/invoice.csv             invoice export
   actions.ts               rider server actions
@@ -146,6 +163,7 @@ lib/
   data/nairobi.ts          stops, lines, fleet, drivers, clients, Vayliron staff
   queries.ts               what a rider can read and do
   ops.ts                   what staff can read and do
+  audit.ts                 who changed what
   schema.sql               SQLite schema
   auth.ts                  multi-principal session (rider / driver / controller)
 tests/                     vitest suites over the domain, booking and operations
@@ -160,7 +178,7 @@ seat allocation and tracking without touching a database.
 ## Tests
 
 ```bash
-npm test          # 111 unit and integration tests
+npm test          # 123 unit and integration tests
 npm run typecheck
 npm run build
 ```
@@ -169,8 +187,10 @@ The suite covers the domain functions and drives the real paths against a
 throwaway SQLite file: overselling, double-booking, seat races, cancellation
 freeing a seat, monthly caps biting mid-month, pass codes refused twice, a
 cancelled run releasing every seat, a replacement bus too small for the riders
-already on it, delays compounding and clamping, off-domain staff emails, and
-what a monthly invoice does and does not bill.
+already on it, delays compounding and clamping, off-domain staff emails, what a
+monthly invoice does and does not bill, and the audit trail — including that a
+cancellation does not leak to a client with nobody on board, and that a failed
+audit write does not roll back the change it was describing.
 
 Server actions never run under `vitest`, so there is a browser pass for those:
 
@@ -185,7 +205,9 @@ reads the issued pass code and opens the live map, switches to the HR hat to add
 a member of staff and pull an invoice, signs in as a controller to put that exact
 run ten minutes behind, works the door with the pass code, calls a stage, then
 signs back in as the rider to confirm they were told their bus is late — and
-finally opens the driver app at phone width.
+finally opens the driver app at phone width — checking along the way that the
+audit trail names the controller who applied the delay, and that the client's
+own activity log shows the change their admin made.
 
 ## Before this touches real staff data
 
@@ -193,10 +215,10 @@ finally opens the driver app at phone width.
   no OTP and no SSO. The session cookie is HMAC-signed and `httpOnly` and the
   three directories are separate, so only the identity check needs replacing —
   swap `signIn` for your identity provider and the rest of the module stands.
-- **Roles are enforced but coarse.** Riders, drivers, company admins and the two
-  controller levels are checked on every page and every server action, but there
-  is no audit log: a cancelled run records its reason, not who pressed the
-  button. Add one before this arbitrates a dispute with a client.
+- **The audit trail is append-only by convention, not by enforcement.** Nothing
+  in the app deletes or edits an entry, but a database user with write access
+  could. Real deployments should move it to append-only storage, or ship it off
+  the box, before it is evidence in a dispute.
 - **Editing a line's stages is deliberately not exposed.** Reordering stops or
   changing distances repricess live bookings, so `/ops/network` can suspend a
   line and add a stage but not rewire one. Lines live in `lib/data/nairobi.ts`.

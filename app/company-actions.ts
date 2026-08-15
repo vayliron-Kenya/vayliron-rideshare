@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import type { FormState } from "@/app/actions";
-import { getCompanyAdmin } from "@/lib/auth";
+import type { Actor } from "@/lib/audit";
+import { getCompanyAdmin, type Session } from "@/lib/auth";
 import {
   createEmployee,
   PeopleError,
@@ -13,6 +14,13 @@ import {
   updateEmployee,
 } from "@/lib/ops";
 import { listEmployees } from "@/lib/queries";
+
+const asActor = (session: Session): Actor => ({
+  kind: "employee",
+  id: session.employee.id,
+  name: session.employee.name,
+  companyId: session.company.id,
+});
 
 function refreshCompany(): void {
   revalidatePath("/company");
@@ -49,16 +57,19 @@ export async function addEmployeeAction(_prev: FormState, formData: FormData): P
   }
 
   try {
-    createEmployee({
-      companyId: admin.company.id,
-      name: parsed.data.name,
-      email: parsed.data.email,
-      phone: parsed.data.phone,
-      staffNo: parsed.data.staffNo,
-      homeStopId: parsed.data.homeStopId ?? null,
-      workStopId: parsed.data.workStopId ?? null,
-      role: parsed.data.role,
-    });
+    createEmployee(
+      {
+        companyId: admin.company.id,
+        name: parsed.data.name,
+        email: parsed.data.email,
+        phone: parsed.data.phone,
+        staffNo: parsed.data.staffNo,
+        homeStopId: parsed.data.homeStopId ?? null,
+        workStopId: parsed.data.workStopId ?? null,
+        role: parsed.data.role,
+      },
+      asActor(admin),
+    );
   } catch (err) {
     if (err instanceof PeopleError) return { error: err.message };
     throw err;
@@ -102,12 +113,17 @@ export async function updateEmployeeAction(
   }
 
   try {
-    updateEmployee(parsed.data.employeeId, admin.company.id, {
-      homeStopId: parsed.data.homeStopId || null,
-      workStopId: parsed.data.workStopId || null,
-      role: parsed.data.role,
-      phone: parsed.data.phone,
-    });
+    updateEmployee(
+      parsed.data.employeeId,
+      admin.company.id,
+      {
+        homeStopId: parsed.data.homeStopId || null,
+        workStopId: parsed.data.workStopId || null,
+        role: parsed.data.role,
+        phone: parsed.data.phone,
+      },
+      asActor(admin),
+    );
   } catch (err) {
     if (err instanceof PeopleError) return { error: err.message };
     throw err;
@@ -132,7 +148,12 @@ export async function setEmployeeActiveAction(
   }
 
   try {
-    const { releasedSeats } = setEmployeeActive(employeeId, admin.company.id, active);
+    const { releasedSeats } = setEmployeeActive(
+      employeeId,
+      admin.company.id,
+      active,
+      asActor(admin),
+    );
     refreshCompany();
     if (active) return { message: "Reactivated." };
     return {
@@ -167,11 +188,15 @@ export async function updatePolicyAction(_prev: FormState, formData: FormData): 
   }
 
   try {
-    updateCompanyPolicy(admin.company.id, {
-      subsidyBps: Math.round(parsed.data.subsidyPct * 100),
-      monthlyCapKes: parsed.data.monthlyCapKes,
-      billingEmail: parsed.data.billingEmail,
-    });
+    updateCompanyPolicy(
+      admin.company.id,
+      {
+        subsidyBps: Math.round(parsed.data.subsidyPct * 100),
+        monthlyCapKes: parsed.data.monthlyCapKes,
+        billingEmail: parsed.data.billingEmail,
+      },
+      asActor(admin),
+    );
   } catch (err) {
     if (err instanceof PeopleError) return { error: err.message };
     throw err;

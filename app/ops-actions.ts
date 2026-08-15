@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import type { FormState } from "@/app/actions";
+import type { Actor } from "@/lib/audit";
 import { getNetworkAdmin, getOperatorSession } from "@/lib/auth";
+import type { Operator } from "@/lib/types";
 import {
   cancelTrip,
   createDriver,
@@ -21,6 +23,12 @@ import {
   updateCompanyContract,
 } from "@/lib/ops";
 
+const asActor = (operator: Operator): Actor => ({
+  kind: "operator",
+  id: operator.id,
+  name: operator.name,
+});
+
 function refreshOps(tripId?: string): void {
   revalidatePath("/ops");
   revalidatePath("/ops/trips");
@@ -35,7 +43,8 @@ function refreshOps(tripId?: string): void {
  * ------------------------------------------------------------------ */
 
 export async function cancelTripAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  if (!(await getOperatorSession())) return { error: "Only Vayliron control can cancel a run." };
+  const operator = await getOperatorSession();
+  if (!operator) return { error: "Only Vayliron control can cancel a run." };
 
   const tripId = String(formData.get("tripId") ?? "");
   const reason = String(formData.get("reason") ?? "").trim();
@@ -43,7 +52,7 @@ export async function cancelTripAction(_prev: FormState, formData: FormData): Pr
   if (reason.length < 3) return { error: "Give a reason — riders and the audit trail need one." };
 
   try {
-    const released = cancelTrip(tripId, reason);
+    const released = cancelTrip(tripId, reason, asActor(operator));
     refreshOps(tripId);
     return {
       message:
@@ -58,14 +67,16 @@ export async function cancelTripAction(_prev: FormState, formData: FormData): Pr
 }
 
 export async function reinstateTripAction(formData: FormData): Promise<void> {
-  if (!(await getOperatorSession())) return;
+  const operator = await getOperatorSession();
+  if (!operator) return;
   const tripId = String(formData.get("tripId") ?? "");
-  if (tripId) reinstateTrip(tripId);
+  if (tripId) reinstateTrip(tripId, asActor(operator));
   refreshOps(tripId);
 }
 
 export async function reassignAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  if (!(await getOperatorSession())) return { error: "Only Vayliron control can reassign a run." };
+  const operator = await getOperatorSession();
+  if (!operator) return { error: "Only Vayliron control can reassign a run." };
 
   const tripId = String(formData.get("tripId") ?? "");
   const vehicleId = String(formData.get("vehicleId") ?? "");
@@ -73,8 +84,8 @@ export async function reassignAction(_prev: FormState, formData: FormData): Prom
   if (!tripId) return { error: "No departure selected." };
 
   try {
-    if (vehicleId) reassignVehicle(tripId, vehicleId);
-    if (driverId) reassignDriver(tripId, driverId);
+    if (vehicleId) reassignVehicle(tripId, vehicleId, asActor(operator));
+    if (driverId) reassignDriver(tripId, driverId, asActor(operator));
   } catch (err) {
     if (err instanceof OpsError) return { error: err.message };
     throw err;
@@ -85,17 +96,19 @@ export async function reassignAction(_prev: FormState, formData: FormData): Prom
 }
 
 export async function opsSetDelayAction(formData: FormData): Promise<void> {
-  if (!(await getOperatorSession())) return;
+  const operator = await getOperatorSession();
+  if (!operator) return;
   const tripId = String(formData.get("tripId") ?? "");
   const minutes = Number(formData.get("delayMinutes") ?? 0);
-  if (tripId && !Number.isNaN(minutes)) setTripDelay(tripId, minutes);
+  if (tripId && !Number.isNaN(minutes)) setTripDelay(tripId, minutes, asActor(operator));
   refreshOps(tripId);
 }
 
 export async function resolveIncidentAction(formData: FormData): Promise<void> {
-  if (!(await getOperatorSession())) return;
+  const operator = await getOperatorSession();
+  if (!operator) return;
   const incidentId = String(formData.get("incidentId") ?? "");
-  if (incidentId) resolveIncident(incidentId);
+  if (incidentId) resolveIncident(incidentId, asActor(operator));
   refreshOps();
 }
 
@@ -121,7 +134,8 @@ export async function createVehicleAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  if (!(await getNetworkAdmin())) return { error: "Adding a bus needs network admin rights." };
+  const admin = await getNetworkAdmin();
+  if (!admin) return { error: "Adding a bus needs network admin rights." };
 
   const parsed = vehicleSchema.safeParse({
     plate: formData.get("plate"),
@@ -135,14 +149,17 @@ export async function createVehicleAction(
   }
 
   try {
-    createVehicle({
-      plate: parsed.data.plate,
-      model: parsed.data.model,
-      capacity: parsed.data.capacity,
-      wifi: parsed.data.wifi,
-      usbPorts: parsed.data.wifi ? parsed.data.capacity : 0,
-      operator: parsed.data.operator,
-    });
+    createVehicle(
+      {
+        plate: parsed.data.plate,
+        model: parsed.data.model,
+        capacity: parsed.data.capacity,
+        wifi: parsed.data.wifi,
+        usbPorts: parsed.data.wifi ? parsed.data.capacity : 0,
+        operator: parsed.data.operator,
+      },
+      asActor(admin),
+    );
   } catch (err) {
     if (String(err).includes("UNIQUE")) return { error: "That plate is already in the fleet." };
     throw err;
@@ -160,7 +177,8 @@ const driverSchema = z.object({
 });
 
 export async function createDriverAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  if (!(await getNetworkAdmin())) return { error: "Adding a driver needs network admin rights." };
+  const admin = await getNetworkAdmin();
+  if (!admin) return { error: "Adding a driver needs network admin rights." };
 
   const parsed = driverSchema.safeParse({
     name: formData.get("name"),
@@ -173,7 +191,7 @@ export async function createDriverAction(_prev: FormState, formData: FormData): 
   }
 
   try {
-    createDriver(parsed.data);
+    createDriver(parsed.data, asActor(admin));
   } catch (err) {
     if (String(err).includes("UNIQUE")) {
       return { error: "That PSV badge or email is already on the roster." };
@@ -186,10 +204,11 @@ export async function createDriverAction(_prev: FormState, formData: FormData): 
 }
 
 export async function setDriverActiveAction(formData: FormData): Promise<void> {
-  if (!(await getNetworkAdmin())) return;
+  const admin = await getNetworkAdmin();
+  if (!admin) return;
   const driverId = String(formData.get("driverId") ?? "");
   const active = formData.get("active") === "1";
-  if (driverId) setDriverActive(driverId, active);
+  if (driverId) setDriverActive(driverId, active, asActor(admin));
   refreshOps();
 }
 
@@ -198,10 +217,11 @@ export async function setDriverActiveAction(formData: FormData): Promise<void> {
  * ------------------------------------------------------------------ */
 
 export async function setRouteActiveAction(formData: FormData): Promise<void> {
-  if (!(await getNetworkAdmin())) return;
+  const admin = await getNetworkAdmin();
+  if (!admin) return;
   const routeId = String(formData.get("routeId") ?? "");
   const active = formData.get("active") === "1";
-  if (routeId) setRouteActive(routeId, active);
+  if (routeId) setRouteActive(routeId, active, asActor(admin));
   refreshOps();
   revalidatePath("/routes");
 }
@@ -215,7 +235,8 @@ const stopSchema = z.object({
 });
 
 export async function createStopAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  if (!(await getNetworkAdmin())) return { error: "Adding a stage needs network admin rights." };
+  const admin = await getNetworkAdmin();
+  if (!admin) return { error: "Adding a stage needs network admin rights." };
 
   const parsed = stopSchema.safeParse({
     name: formData.get("name"),
@@ -232,7 +253,7 @@ export async function createStopAction(_prev: FormState, formData: FormData): Pr
     };
   }
 
-  createStop(parsed.data);
+  createStop(parsed.data, asActor(admin));
   refreshOps();
   return { message: `${parsed.data.name} added. Put it on a line to start selling seats to it.` };
 }
@@ -247,7 +268,8 @@ export async function updateContractAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  if (!(await getNetworkAdmin())) {
+  const admin = await getNetworkAdmin();
+  if (!admin) {
     return { error: "Changing a client contract needs network admin rights." };
   }
 
@@ -258,10 +280,14 @@ export async function updateContractAction(
   });
   if (!parsed.success) return { error: "Check the contract terms." };
 
-  updateCompanyContract(parsed.data.companyId, {
-    subsidyBps: Math.round(parsed.data.subsidyPct * 100),
-    monthlyCapKes: parsed.data.monthlyCapKes,
-  });
+  updateCompanyContract(
+    parsed.data.companyId,
+    {
+      subsidyBps: Math.round(parsed.data.subsidyPct * 100),
+      monthlyCapKes: parsed.data.monthlyCapKes,
+    },
+    asActor(admin),
+  );
 
   refreshOps();
   revalidatePath("/company");

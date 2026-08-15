@@ -101,6 +101,7 @@ conn.exec(fs.readFileSync(path.join(process.cwd(), "lib", "schema.sql"), "utf8")
 
 // Order matters: children before parents.
 for (const table of [
+  "audit_events",
   "incidents",
   "trip_stop_events",
   "vehicle_pings",
@@ -650,6 +651,19 @@ const insertIncident = conn.prepare(
 );
 const setDelay = conn.prepare("UPDATE trips SET delay_minutes = ? WHERE id = ?");
 
+// The seed writes audit entries directly rather than through lib/audit, which
+// would open a second connection to the same file for no reason.
+const insertAudit = conn.prepare(
+  `INSERT INTO audit_events
+     (at, actor_kind, actor_id, actor_name, action,
+      subject_kind, subject_id, subject_label, summary, detail, company_id)
+   VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+);
+
+const routeCodeById = new Map(ROUTES.map((r) => [`rte_${r.slug}`, r.code]));
+const tripLabel = (t: TripRecord) =>
+  `${routeCodeById.get(t.routeId)} ${t.departTime} on ${t.serviceDate}`;
+
 const INCIDENT_SCRIPT: { kind: string; note: string; delay: number }[] = [
   { kind: "traffic", note: "Standstill at Githurai flyover, three lanes merging", delay: 20 },
   { kind: "breakdown", note: "Matatu broken down across the service lane at Kangemi", delay: 15 },
@@ -686,6 +700,54 @@ for (const [index, trip] of disruptable.entries()) {
     nairobiInstant(trip.serviceDate, trip.departTime).toISOString(),
     resolved ? nowIso : null,
   );
+
+  const driverId = `drv_${String((index % fleetSize) + 1).padStart(3, "0")}`;
+  const driverName = roster[index % fleetSize].name;
+  const raisedAt = nairobiInstant(trip.serviceDate, trip.departTime).toISOString();
+
+  insertAudit.run(
+    raisedAt,
+    "driver",
+    driverId,
+    driverName,
+    "incident.raise",
+    "trip",
+    trip.id,
+    tripLabel(trip),
+    `Reported ${script.kind} on ${tripLabel(trip)}: ${script.note} (+${script.delay} min)`,
+    JSON.stringify({ kind: script.kind, delayMinutes: script.delay }),
+    null,
+  );
+  insertAudit.run(
+    raisedAt,
+    "driver",
+    driverId,
+    driverName,
+    "trip.delay",
+    "trip",
+    trip.id,
+    tripLabel(trip),
+    `Put ${tripLabel(trip)} ${script.delay} minutes behind schedule`,
+    JSON.stringify({ from: 0, to: script.delay }),
+    null,
+  );
+
+  if (resolved) {
+    const controller = OPERATORS[incidentCount % OPERATORS.length];
+    insertAudit.run(
+      nowIso,
+      "operator",
+      controller.id,
+      controller.name,
+      "incident.resolve",
+      "trip",
+      trip.id,
+      tripLabel(trip),
+      `Resolved the ${script.kind} incident on ${tripLabel(trip)}`,
+      null,
+      null,
+    );
+  }
   // A finished run keeps the delay it actually ran with; a live one is told to
   // control so riders further down the line see it.
   setDelay.run(script.delay, trip.id);
@@ -728,6 +790,7 @@ console.log(`  trips            ${count("trips")}`);
 console.log(`  bookings         ${bookingCount}`);
 console.log(`  live pings       ${pings}`);
 console.log(`  incidents        ${incidentCount}`);
+console.log(`  audit entries    ${count("audit_events")}`);
 console.log(`  stage arrivals   ${arrivalCount}`);
 console.log(`  operators        ${count("operators")}`);
 console.log("");

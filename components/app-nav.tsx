@@ -26,6 +26,7 @@ function linksFor(props: NavProps): NavLink[] {
       { href: "/ops/trips", label: "Departures" },
       { href: "/ops/fleet", label: "Fleet" },
       { href: "/ops/clients", label: "Clients" },
+      { href: "/ops/audit", label: "Audit" },
     ];
     if (props.isNetworkAdmin) links.push({ href: "/ops/network", label: "Network" });
     return links;

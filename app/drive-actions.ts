@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import type { FormState } from "@/app/actions";
-import { getDriverSession, getOperatorSession, getPrincipal } from "@/lib/auth";
+import type { Actor } from "@/lib/audit";
+import { actorFrom, getDriverSession, getOperatorSession, getPrincipal } from "@/lib/auth";
 import {
   markStopArrived,
   raiseIncident,
@@ -19,14 +20,14 @@ import type { IncidentKind } from "@/lib/types";
  * Anyone who can work a departure: the driver rostered on it, or a Vayliron
  * controller covering for them from the office.
  */
-async function requireCrew(tripId: string): Promise<
-  { ok: true; kind: "driver" | "operator"; id: string } | { ok: false; error: string }
-> {
+async function requireCrew(
+  tripId: string,
+): Promise<{ ok: true; actor: Actor } | { ok: false; error: string }> {
   const principal = await getPrincipal();
   if (!principal) return { ok: false, error: "Your session expired. Sign in again." };
 
   if (principal.kind === "operator") {
-    return { ok: true, kind: "operator", id: principal.operator.id };
+    return { ok: true, actor: actorFrom(principal) };
   }
 
   if (principal.kind === "driver") {
@@ -35,7 +36,7 @@ async function requireCrew(tripId: string): Promise<
     if (trip.trip.driverId !== principal.driver.id) {
       return { ok: false, error: "You are not rostered on that departure." };
     }
-    return { ok: true, kind: "driver", id: principal.driver.id };
+    return { ok: true, actor: actorFrom(principal) };
   }
 
   return { ok: false, error: "Only drivers and control can work a departure." };
@@ -88,7 +89,7 @@ export async function startRunAction(formData: FormData): Promise<void> {
   const crew = await requireCrew(tripId);
   if (!crew.ok) return;
 
-  setTripStatus(tripId, "in_transit");
+  setTripStatus(tripId, "in_transit", crew.actor);
   refresh(tripId);
 }
 
@@ -97,7 +98,7 @@ export async function openBoardingAction(formData: FormData): Promise<void> {
   const crew = await requireCrew(tripId);
   if (!crew.ok) return;
 
-  setTripStatus(tripId, "boarding");
+  setTripStatus(tripId, "boarding", crew.actor);
   refresh(tripId);
 }
 
@@ -107,7 +108,7 @@ export async function markArrivedAction(formData: FormData): Promise<void> {
   const crew = await requireCrew(tripId);
   if (!crew.ok || !stopId) return;
 
-  markStopArrived(tripId, stopId);
+  markStopArrived(tripId, stopId, crew.actor);
   refresh(tripId);
 }
 
@@ -116,7 +117,7 @@ export async function endRunAction(formData: FormData): Promise<void> {
   const crew = await requireCrew(tripId);
   if (!crew.ok) return;
 
-  closeTrip(tripId);
+  closeTrip(tripId, crew.actor);
   refresh(tripId);
   redirect("/drive");
 }
@@ -149,14 +150,15 @@ export async function reportIncidentAction(
   const crew = await requireCrew(parsed.data.tripId);
   if (!crew.ok) return { error: crew.error };
 
-  raiseIncident({
-    tripId: parsed.data.tripId,
-    reporterKind: crew.kind,
-    reporterId: crew.id,
-    kind: parsed.data.kind as IncidentKind,
-    note: parsed.data.note,
-    delayMinutes: parsed.data.delayMinutes,
-  });
+  raiseIncident(
+    {
+      tripId: parsed.data.tripId,
+      kind: parsed.data.kind as IncidentKind,
+      note: parsed.data.note,
+      delayMinutes: parsed.data.delayMinutes,
+    },
+    crew.actor,
+  );
 
   refresh(parsed.data.tripId);
   return {
@@ -174,7 +176,7 @@ export async function setDelayAction(formData: FormData): Promise<void> {
   const crew = await requireCrew(tripId);
   if (!crew.ok || Number.isNaN(minutes)) return;
 
-  setTripDelay(tripId, minutes);
+  setTripDelay(tripId, minutes, crew.actor);
   refresh(tripId);
 }
 

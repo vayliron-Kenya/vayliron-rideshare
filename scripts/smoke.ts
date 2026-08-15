@@ -162,6 +162,12 @@ async function main() {
   check("control can put a run behind schedule", delayed);
   await page.screenshot({ path: path.join(SHOTS, "10-ops-trip.png"), fullPage: true });
 
+  // The delay must be attributed to the controller who applied it.
+  await page.goto(`${BASE}/ops/audit`, { waitUntil: "networkidle" });
+  const auditNamesController = await page.getByText("Naliaka Wekesa").count();
+  check("the audit trail names who made the change", auditNamesController > 0);
+  await page.screenshot({ path: path.join(SHOTS, "16-ops-audit.png"), fullPage: true });
+
   await page.goto(`${BASE}/ops/fleet`, { waitUntil: "networkidle" });
   check("fleet and roster render", await page.getByText("Fleet & roster").first().isVisible());
   await page.screenshot({ path: path.join(SHOTS, "11-ops-fleet.png"), fullPage: true });
@@ -215,6 +221,12 @@ async function main() {
     .count();
   check("the rider is told their bus is running late", riderSeesDelay > 0);
   await page.screenshot({ path: path.join(SHOTS, "14-rider-delay.png"), fullPage: true });
+
+  // HR sees their own admin change attributed to them, in their own log.
+  await page.goto(`${BASE}/company/activity`, { waitUntil: "networkidle" });
+  const clientSeesOwnChange = await page.getByText(/Added Smoke Testworker/).count();
+  check("the client's activity log shows their own change", clientSeesOwnChange > 0);
+  await page.screenshot({ path: path.join(SHOTS, "17-company-activity.png"), fullPage: true });
 
   /* ---------------------------------------------------------------- *
    * Driver app

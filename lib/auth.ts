@@ -3,6 +3,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 
+import type { Actor } from "@/lib/audit";
 import { getDriver, getDriverByEmail, getOperator, getOperatorByEmail } from "@/lib/ops";
 import { getCompany, getEmployee, getEmployeeByEmail } from "@/lib/queries";
 import type { Company, Driver, Employee, Operator } from "@/lib/types";
@@ -81,6 +82,27 @@ export function displayOrg(principal: Principal): string {
       return "Vayliron · Driver";
     default:
       return principal.company.name;
+  }
+}
+
+/** The audit identity for whoever is acting. */
+export function actorFrom(principal: Principal): Actor {
+  switch (principal.kind) {
+    case "operator":
+      return {
+        kind: "operator",
+        id: principal.operator.id,
+        name: principal.operator.name,
+      };
+    case "driver":
+      return { kind: "driver", id: principal.driver.id, name: principal.driver.name };
+    default:
+      return {
+        kind: "employee",
+        id: principal.employee.id,
+        name: principal.employee.name,
+        companyId: principal.company.id,
+      };
   }
 }
 

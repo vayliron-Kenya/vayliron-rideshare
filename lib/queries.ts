@@ -1,3 +1,4 @@
+import { record, type Actor } from "@/lib/audit";
 import { db, tx } from "@/lib/db";
 import { fareForKm, splitFare, type FareSplit } from "@/lib/domain/fares";
 import {
@@ -701,17 +702,40 @@ export function boardByPassCode(tripId: string, passCode: string): BoardResult {
   return entry ? { ok: true, entry } : { ok: false, reason: "not_found" };
 }
 
-/** Closes out a departure: anyone who never scanned is marked a no-show. */
-export function closeTrip(tripId: string): number {
+/**
+ * Closes out a departure: anyone who never scanned is marked a no-show.
+ *
+ * `actor` is optional here only so the seed can close historical runs without
+ * inventing a person. Every interactive caller passes one.
+ */
+export function closeTrip(tripId: string, actor?: Actor): number {
   const info = db()
     .prepare("UPDATE bookings SET status = 'no_show' WHERE trip_id = ? AND status = 'booked'")
     .run(tripId);
   db().prepare("UPDATE trips SET status = 'completed' WHERE id = ?").run(tripId);
-  return info.changes;
-}
 
-export function setTripStatus(tripId: string, status: Trip["status"]): void {
-  db().prepare("UPDATE trips SET status = ? WHERE id = ?").run(status, tripId);
+  if (actor) {
+    const label = db()
+      .prepare(
+        `SELECT r.code, t.depart_time, t.service_date FROM trips t
+           JOIN routes r ON r.id = t.route_id WHERE t.id = ?`,
+      )
+      .get(tripId) as Row | undefined;
+
+    record({
+      actor,
+      action: "trip.close",
+      subjectKind: "trip",
+      subjectId: tripId,
+      subjectLabel: label
+        ? `${label.code as string} ${label.depart_time as string} on ${label.service_date as string}`
+        : tripId,
+      summary: `Closed the run. ${info.changes} ${info.changes === 1 ? "rider was" : "riders were"} marked as a no-show.`,
+      detail: { noShows: info.changes },
+    });
+  }
+
+  return info.changes;
 }
 
 /* ------------------------------------------------------------------ *

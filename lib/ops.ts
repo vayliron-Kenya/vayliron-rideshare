@@ -6,6 +6,7 @@
  * Kept apart from `lib/queries.ts` so the rider path stays easy to read: that
  * module is what a commuter can do, this one is what staff can do.
  */
+import { record, type Actor } from "@/lib/audit";
 import { db, tx } from "@/lib/db";
 import { nairobiDate } from "@/lib/domain/time";
 import { getTrip, listTrips, type TripSummary } from "@/lib/queries";
@@ -123,6 +124,35 @@ export function getDriver(id: string): Driver | null {
 }
 
 /* ------------------------------------------------------------------ *
+ * Audit helpers
+ * ------------------------------------------------------------------ */
+
+/** "VL-01 06:30 on 2026-08-17" — enough to identify a run after it is gone. */
+function tripLabel(tripId: string): string {
+  const row = db()
+    .prepare(
+      `SELECT r.code, t.depart_time, t.service_date
+         FROM trips t JOIN routes r ON r.id = t.route_id WHERE t.id = ?`,
+    )
+    .get(tripId) as Row | undefined;
+  if (!row) return tripId;
+  return `${row.code as string} ${row.depart_time as string} on ${row.service_date as string}`;
+}
+
+/** Which clients had riders on a departure, so each can see it in their own log. */
+function affectedCompanies(tripId: string): string[] {
+  return (
+    db()
+      .prepare(
+        `SELECT DISTINCT e.company_id AS id
+           FROM bookings b JOIN employees e ON e.id = b.employee_id
+          WHERE b.trip_id = ?`,
+      )
+      .all(tripId) as Row[]
+  ).map((r) => r.id as string);
+}
+
+/* ------------------------------------------------------------------ *
  * Fleet
  * ------------------------------------------------------------------ */
 
@@ -191,14 +221,17 @@ export function listFleet(serviceDate = nairobiDate()): FleetVehicle[] {
   });
 }
 
-export function createVehicle(input: {
-  plate: string;
-  model: string;
-  capacity: number;
-  wifi: boolean;
-  usbPorts: number;
-  operator: string;
-}): string {
+export function createVehicle(
+  input: {
+    plate: string;
+    model: string;
+    capacity: number;
+    wifi: boolean;
+    usbPorts: number;
+    operator: string;
+  },
+  actor: Actor,
+): string {
   const id = `veh_${crypto.randomUUID().slice(0, 10)}`;
   db()
     .prepare(
@@ -213,15 +246,23 @@ export function createVehicle(input: {
       input.usbPorts,
       input.operator.trim(),
     );
+
+  record({
+    actor,
+    action: "vehicle.create",
+    subjectKind: "vehicle",
+    subjectId: id,
+    subjectLabel: input.plate.trim().toUpperCase(),
+    summary: `Added ${input.plate.trim().toUpperCase()} (${input.model.trim()}, ${input.capacity} seats) to the fleet`,
+    detail: { capacity: input.capacity, operator: input.operator.trim() },
+  });
   return id;
 }
 
-export function createDriver(input: {
-  name: string;
-  phone: string;
-  psvLicence: string;
-  email: string;
-}): string {
+export function createDriver(
+  input: { name: string; phone: string; psvLicence: string; email: string },
+  actor: Actor,
+): string {
   const id = `drv_${crypto.randomUUID().slice(0, 10)}`;
   db()
     .prepare(
@@ -235,11 +276,31 @@ export function createDriver(input: {
       4500,
       input.email.trim().toLowerCase(),
     );
+
+  record({
+    actor,
+    action: "driver.create",
+    subjectKind: "driver",
+    subjectId: id,
+    subjectLabel: input.name.trim(),
+    summary: `Added ${input.name.trim()} to the roster, signing in as ${input.email.trim().toLowerCase()}`,
+    detail: { psvLicence: input.psvLicence.trim().toUpperCase() },
+  });
   return id;
 }
 
-export function setDriverActive(driverId: string, active: boolean): void {
+export function setDriverActive(driverId: string, active: boolean, actor: Actor): void {
+  const driver = getDriver(driverId);
   db().prepare("UPDATE drivers SET active = ? WHERE id = ?").run(active ? 1 : 0, driverId);
+
+  record({
+    actor,
+    action: active ? "driver.reinstate" : "driver.stand_down",
+    subjectKind: "driver",
+    subjectId: driverId,
+    subjectLabel: driver?.name ?? driverId,
+    summary: `${active ? "Reinstated" : "Stood down"} ${driver?.name ?? driverId}`,
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -392,8 +453,11 @@ export class OpsError extends Error {
  * Riders are not silently stranded: their bookings come back as cancelled, so
  * the seat is off their account and the trip drops out of their upcoming list.
  */
-export function cancelTrip(tripId: string, reason: string): number {
-  return tx((conn) => {
+export function cancelTrip(tripId: string, reason: string, actor: Actor): number {
+  const label = tripLabel(tripId);
+  const companies = affectedCompanies(tripId);
+
+  const released = tx((conn) => {
     const trip = conn.prepare("SELECT status FROM trips WHERE id = ?").get(tripId) as
       | Row
       | undefined;
@@ -406,23 +470,61 @@ export function cancelTrip(tripId: string, reason: string): number {
       .prepare("UPDATE trips SET status = 'cancelled', cancel_reason = ? WHERE id = ?")
       .run(reason.trim() || "Cancelled by control", tripId);
 
-    const released = conn
+    const update = conn
       .prepare(
         "UPDATE bookings SET status = 'cancelled' WHERE trip_id = ? AND status IN ('booked','boarded')",
       )
       .run(tripId);
 
-    return released.changes;
+    return update.changes;
   });
+
+  const trimmed = reason.trim() || "Cancelled by control";
+  record({
+    actor,
+    action: "trip.cancel",
+    subjectKind: "trip",
+    subjectId: tripId,
+    subjectLabel: label,
+    summary: `Cancelled ${label} — ${trimmed}. ${released} ${released === 1 ? "seat" : "seats"} released.`,
+    detail: { reason: trimmed, releasedSeats: released },
+  });
+
+  // The clients whose staff lose a seat get the same entry in their own log.
+  for (const companyId of companies) {
+    record({
+      actor,
+      action: "trip.cancel",
+      subjectKind: "trip",
+      subjectId: tripId,
+      subjectLabel: label,
+      summary: `Vayliron cancelled ${label} — ${trimmed}. Affected seats have been released.`,
+      detail: { reason: trimmed },
+      companyId,
+    });
+  }
+
+  return released;
 }
 
 /** Puts a cancelled departure back on the board. Released seats stay released. */
-export function reinstateTrip(tripId: string): void {
-  db()
+export function reinstateTrip(tripId: string, actor: Actor): void {
+  const label = tripLabel(tripId);
+  const info = db()
     .prepare(
       "UPDATE trips SET status = 'scheduled', cancel_reason = NULL WHERE id = ? AND status = 'cancelled'",
     )
     .run(tripId);
+
+  if (info.changes === 0) return;
+  record({
+    actor,
+    action: "trip.reinstate",
+    subjectKind: "trip",
+    subjectId: tripId,
+    subjectLabel: label,
+    summary: `Put ${label} back on the board. Released seats stay released.`,
+  });
 }
 
 /**
@@ -432,7 +534,10 @@ export function reinstateTrip(tripId: string): void {
  * seat, so the swap is refused rather than silently overselling — control can
  * pick a bigger unit or cancel deliberately.
  */
-export function reassignVehicle(tripId: string, vehicleId: string): void {
+export function reassignVehicle(tripId: string, vehicleId: string, actor: Actor): void {
+  const label = tripLabel(tripId);
+  const before = getTrip(tripId)?.vehicle.plate ?? "unknown";
+
   tx((conn) => {
     const vehicle = conn.prepare("SELECT capacity FROM vehicles WHERE id = ?").get(vehicleId) as
       | Row
@@ -471,21 +576,80 @@ export function reassignVehicle(tripId: string, vehicleId: string): void {
       .prepare("UPDATE trips SET vehicle_id = ?, capacity = ? WHERE id = ?")
       .run(vehicleId, capacity, tripId);
   });
+
+  const after = getTrip(tripId)?.vehicle.plate ?? vehicleId;
+  record({
+    actor,
+    action: "trip.reassign_vehicle",
+    subjectKind: "trip",
+    subjectId: tripId,
+    subjectLabel: label,
+    summary: `Moved ${label} from ${before} to ${after}`,
+    detail: { from: before, to: after },
+  });
 }
 
-export function reassignDriver(tripId: string, driverId: string): void {
-  const driver = db().prepare("SELECT id FROM drivers WHERE id = ? AND active = 1").get(driverId);
-  if (!driver) throw new OpsError("That driver is not on the active roster.");
+export function reassignDriver(tripId: string, driverId: string, actor: Actor): void {
+  const driver = getDriver(driverId);
+  if (!driver || !driver.active) throw new OpsError("That driver is not on the active roster.");
+
+  const label = tripLabel(tripId);
+  const before = getTrip(tripId)?.driver.name ?? "unknown";
   db().prepare("UPDATE trips SET driver_id = ? WHERE id = ?").run(driverId, tripId);
+
+  record({
+    actor,
+    action: "trip.reassign_driver",
+    subjectKind: "trip",
+    subjectId: tripId,
+    subjectLabel: label,
+    summary: `Moved ${label} from ${before} to ${driver.name}`,
+    detail: { from: before, to: driver.name },
+  });
 }
 
-export function setTripDelay(tripId: string, delayMinutes: number): void {
+/** Writes the delay without an audit entry, for callers that log their own. */
+function writeDelay(tripId: string, delayMinutes: number): number {
   const minutes = Math.max(0, Math.min(240, Math.round(delayMinutes)));
   db().prepare("UPDATE trips SET delay_minutes = ? WHERE id = ?").run(minutes, tripId);
+  return minutes;
 }
 
-export function setTripStatus(tripId: string, status: Trip["status"]): void {
+export function setTripDelay(tripId: string, delayMinutes: number, actor: Actor): void {
+  const label = tripLabel(tripId);
+  const before = getTrip(tripId)?.trip.delayMinutes ?? 0;
+  const minutes = writeDelay(tripId, delayMinutes);
+  if (minutes === before) return;
+
+  record({
+    actor,
+    action: "trip.delay",
+    subjectKind: "trip",
+    subjectId: tripId,
+    subjectLabel: label,
+    summary:
+      minutes === 0
+        ? `Marked ${label} back on time`
+        : `Put ${label} ${minutes} minutes behind schedule`,
+    detail: { from: before, to: minutes },
+  });
+}
+
+export function setTripStatus(tripId: string, status: Trip["status"], actor: Actor): void {
+  const label = tripLabel(tripId);
+  const before = getTrip(tripId)?.trip.status;
+  if (before === status) return;
+
   db().prepare("UPDATE trips SET status = ? WHERE id = ?").run(status, tripId);
+  record({
+    actor,
+    action: `trip.${status}`,
+    subjectKind: "trip",
+    subjectId: tripId,
+    subjectLabel: label,
+    summary: `${label} moved from ${before ?? "unknown"} to ${status}`,
+    detail: { from: before, to: status },
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -512,7 +676,11 @@ export function tripStopEvents(tripId: string): StopEvent[] {
  * honest without the driver having to type a number: arriving nine minutes
  * after the scheduled time simply is a nine-minute delay.
  */
-export function markStopArrived(tripId: string, stopId: string): { delayMinutes: number } | null {
+export function markStopArrived(
+  tripId: string,
+  stopId: string,
+  actor: Actor,
+): { delayMinutes: number } | null {
   const summary = getTrip(tripId);
   if (!summary) return null;
 
@@ -526,6 +694,16 @@ export function markStopArrived(tripId: string, stopId: string): { delayMinutes:
        ON CONFLICT (trip_id, stop_id) DO UPDATE SET arrived_at = excluded.arrived_at`,
     )
     .run(tripId, stopId, now.toISOString());
+
+  record({
+    actor,
+    action: "trip.stage_called",
+    subjectKind: "trip",
+    subjectId: tripId,
+    subjectLabel: tripLabel(tripId),
+    summary: `Called ${entry.name} on ${tripLabel(tripId)}`,
+    detail: { stop: entry.name, scheduled: entry.time },
+  });
 
   // Only a run that has actually left can tell us anything about its timing.
   // Calling a stage on a departure that has not started — a driver tapping
@@ -541,7 +719,18 @@ export function markStopArrived(tripId: string, stopId: string): { delayMinutes:
   const slipMinutes = Math.round((now.getTime() - expectedAt) / 60000);
   const delayMinutes = Math.max(0, summary.trip.delayMinutes + slipMinutes);
 
-  if (delayMinutes !== summary.trip.delayMinutes) setTripDelay(tripId, delayMinutes);
+  if (delayMinutes !== summary.trip.delayMinutes) {
+    writeDelay(tripId, delayMinutes);
+    record({
+      actor,
+      action: "trip.delay",
+      subjectKind: "trip",
+      subjectId: tripId,
+      subjectLabel: tripLabel(tripId),
+      summary: `${tripLabel(tripId)} is running ${delayMinutes} minutes behind, from the arrival called at ${entry.name}`,
+      detail: { from: summary.trip.delayMinutes, to: delayMinutes, derivedFrom: entry.name },
+    });
+  }
   return { delayMinutes };
 }
 
@@ -549,14 +738,14 @@ export function markStopArrived(tripId: string, stopId: string): { delayMinutes:
  * Incidents
  * ------------------------------------------------------------------ */
 
-export function raiseIncident(input: {
-  tripId: string;
-  reporterKind: "driver" | "operator";
-  reporterId: string;
-  kind: IncidentKind;
-  note: string;
-  delayMinutes: number;
-}): string {
+export function raiseIncident(
+  input: { tripId: string; kind: IncidentKind; note: string; delayMinutes: number },
+  actor: Actor,
+): string {
+  if (actor.kind !== "driver" && actor.kind !== "operator") {
+    throw new OpsError("Only a driver or Vayliron control can raise an incident.");
+  }
+
   const id = `inc_${crypto.randomUUID().slice(0, 10)}`;
   const delay = Math.max(0, Math.min(240, Math.round(input.delayMinutes)));
 
@@ -570,8 +759,8 @@ export function raiseIncident(input: {
       .run(
         id,
         input.tripId,
-        input.reporterKind,
-        input.reporterId,
+        actor.kind,
+        actor.id,
         input.kind,
         input.note.trim(),
         delay,
@@ -588,13 +777,42 @@ export function raiseIncident(input: {
     }
   });
 
+  const label = tripLabel(input.tripId);
+  record({
+    actor,
+    action: "incident.raise",
+    subjectKind: "trip",
+    subjectId: input.tripId,
+    subjectLabel: label,
+    summary:
+      delay > 0
+        ? `Reported ${input.kind} on ${label}: ${input.note.trim()} (+${delay} min)`
+        : `Reported ${input.kind} on ${label}: ${input.note.trim()}`,
+    detail: { incidentId: id, kind: input.kind, delayMinutes: delay },
+  });
+
   return id;
 }
 
-export function resolveIncident(incidentId: string): void {
-  db()
+export function resolveIncident(incidentId: string, actor: Actor): void {
+  const incident = db().prepare("SELECT * FROM incidents WHERE id = ?").get(incidentId) as
+    | Row
+    | undefined;
+  const info = db()
     .prepare("UPDATE incidents SET resolved_at = ? WHERE id = ? AND resolved_at IS NULL")
     .run(new Date().toISOString(), incidentId);
+
+  if (info.changes === 0 || !incident) return;
+  const label = tripLabel(incident.trip_id as string);
+  record({
+    actor,
+    action: "incident.resolve",
+    subjectKind: "trip",
+    subjectId: incident.trip_id as string,
+    subjectLabel: label,
+    summary: `Resolved the ${incident.kind as string} incident on ${label}`,
+    detail: { incidentId },
+  });
 }
 
 export interface IncidentView {
@@ -688,16 +906,19 @@ export class PeopleError extends Error {
   }
 }
 
-export function createEmployee(input: {
-  companyId: string;
-  name: string;
-  email: string;
-  phone: string;
-  staffNo: string;
-  homeStopId: string | null;
-  workStopId: string | null;
-  role: "employee" | "admin";
-}): string {
+export function createEmployee(
+  input: {
+    companyId: string;
+    name: string;
+    email: string;
+    phone: string;
+    staffNo: string;
+    homeStopId: string | null;
+    workStopId: string | null;
+    role: "employee" | "admin";
+  },
+  actor: Actor,
+): string {
   const company = db().prepare("SELECT email_domain FROM companies WHERE id = ?").get(input.companyId) as
     | Row
     | undefined;
@@ -731,6 +952,17 @@ export function createEmployee(input: {
       input.role,
       new Date().toISOString(),
     );
+
+  record({
+    actor,
+    action: "employee.create",
+    subjectKind: "employee",
+    subjectId: id,
+    subjectLabel: input.name.trim(),
+    summary: `Added ${input.name.trim()} (${email}) as ${input.role === "admin" ? "an HR admin" : "a rider"}`,
+    detail: { staffNo: input.staffNo.trim(), role: input.role },
+    companyId: input.companyId,
+  });
   return id;
 }
 
@@ -743,6 +975,7 @@ export function updateEmployee(
     role?: "employee" | "admin";
     phone?: string;
   },
+  actor: Actor,
 ): void {
   const employee = db()
     .prepare("SELECT * FROM employees WHERE id = ? AND company_id = ?")
@@ -763,6 +996,25 @@ export function updateEmployee(
       employeeId,
       companyId,
     );
+
+  const roleChanged = patch.role && patch.role !== employee.role;
+  record({
+    actor,
+    action: "employee.update",
+    subjectKind: "employee",
+    subjectId: employeeId,
+    subjectLabel: employee.name as string,
+    summary: roleChanged
+      ? `Changed ${employee.name as string} to ${patch.role === "admin" ? "an HR admin" : "a rider"}`
+      : `Updated ${employee.name as string}'s details`,
+    detail: {
+      roleFrom: employee.role,
+      roleTo: patch.role ?? employee.role,
+      homeStopId: patch.homeStopId ?? employee.home_stop_id,
+      workStopId: patch.workStopId ?? employee.work_stop_id,
+    },
+    companyId,
+  });
 }
 
 /**
@@ -774,15 +1026,16 @@ export function setEmployeeActive(
   employeeId: string,
   companyId: string,
   active: boolean,
+  actor: Actor,
 ): { releasedSeats: number } {
-  return tx((conn) => {
+  const result = tx((conn) => {
     const employee = conn
-      .prepare("SELECT id FROM employees WHERE id = ? AND company_id = ?")
+      .prepare("SELECT id, name FROM employees WHERE id = ? AND company_id = ?")
       .get(employeeId, companyId) as Row | undefined;
     if (!employee) throw new PeopleError("That employee is not on your account.");
 
     conn.prepare("UPDATE employees SET active = ? WHERE id = ?").run(active ? 1 : 0, employeeId);
-    if (active) return { releasedSeats: 0 };
+    if (active) return { releasedSeats: 0, name: employee.name as string };
 
     const today = nairobiDate();
     const released = conn
@@ -793,13 +1046,33 @@ export function setEmployeeActive(
       )
       .run(employeeId, today);
 
-    return { releasedSeats: released.changes };
+    return { releasedSeats: released.changes, name: employee.name as string };
   });
+
+  record({
+    actor,
+    action: active ? "employee.reactivate" : "employee.deactivate",
+    subjectKind: "employee",
+    subjectId: employeeId,
+    subjectLabel: result.name,
+    summary: active
+      ? `Reactivated ${result.name}`
+      : `Deactivated ${result.name}${
+          result.releasedSeats > 0
+            ? `, releasing ${result.releasedSeats} upcoming ${result.releasedSeats === 1 ? "seat" : "seats"}`
+            : ""
+        }`,
+    detail: { releasedSeats: result.releasedSeats },
+    companyId,
+  });
+
+  return { releasedSeats: result.releasedSeats };
 }
 
 export function updateCompanyPolicy(
   companyId: string,
   patch: { subsidyBps: number; monthlyCapKes: number; billingEmail: string },
+  actor: Actor,
 ): void {
   if (patch.subsidyBps < 0 || patch.subsidyBps > 10000) {
     throw new PeopleError("The employer share must be between 0% and 100%.");
@@ -808,20 +1081,68 @@ export function updateCompanyPolicy(
     throw new PeopleError("A monthly cap cannot be negative.");
   }
 
+  const before = db().prepare("SELECT * FROM companies WHERE id = ?").get(companyId) as
+    | Row
+    | undefined;
+
   db()
     .prepare(
       "UPDATE companies SET subsidy_bps = ?, monthly_cap_kes = ?, billing_email = ? WHERE id = ?",
     )
     .run(patch.subsidyBps, patch.monthlyCapKes, patch.billingEmail.trim(), companyId);
+
+  record({
+    actor,
+    action: "company.policy",
+    subjectKind: "company",
+    subjectId: companyId,
+    subjectLabel: (before?.name as string) ?? companyId,
+    summary: `Set the employer share to ${patch.subsidyBps / 100}% with a ${
+      patch.monthlyCapKes > 0 ? `KSh ${patch.monthlyCapKes} monthly cap` : "no monthly cap"
+    }`,
+    detail: {
+      subsidyFrom: before?.subsidy_bps,
+      subsidyTo: patch.subsidyBps,
+      capFrom: before?.monthly_cap_kes,
+      capTo: patch.monthlyCapKes,
+      billingEmail: patch.billingEmail.trim(),
+    },
+    companyId,
+  });
 }
 
 export function updateCompanyContract(
   companyId: string,
   patch: { subsidyBps: number; monthlyCapKes: number },
+  actor: Actor,
 ): void {
+  const before = db().prepare("SELECT * FROM companies WHERE id = ?").get(companyId) as
+    | Row
+    | undefined;
+
   db()
     .prepare("UPDATE companies SET subsidy_bps = ?, monthly_cap_kes = ? WHERE id = ?")
     .run(patch.subsidyBps, patch.monthlyCapKes, companyId);
+
+  // Recorded against the client too: a Vayliron-side contract change shows up
+  // in their own activity log rather than appearing to happen by itself.
+  record({
+    actor,
+    action: "company.contract",
+    subjectKind: "company",
+    subjectId: companyId,
+    subjectLabel: (before?.name as string) ?? companyId,
+    summary: `Vayliron set the employer share to ${patch.subsidyBps / 100}% with a ${
+      patch.monthlyCapKes > 0 ? `KSh ${patch.monthlyCapKes} monthly cap` : "no monthly cap"
+    }`,
+    detail: {
+      subsidyFrom: before?.subsidy_bps,
+      subsidyTo: patch.subsidyBps,
+      capFrom: before?.monthly_cap_kes,
+      capTo: patch.monthlyCapKes,
+    },
+    companyId,
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -983,8 +1304,21 @@ export function dailyNetworkRevenue(
  * Network editing
  * ------------------------------------------------------------------ */
 
-export function setRouteActive(routeId: string, active: boolean): void {
+export function setRouteActive(routeId: string, active: boolean, actor: Actor): void {
+  const route = db().prepare("SELECT code, name FROM routes WHERE id = ?").get(routeId) as
+    | Row
+    | undefined;
   db().prepare("UPDATE routes SET active = ? WHERE id = ?").run(active ? 1 : 0, routeId);
+
+  const label = route ? `${route.code as string} ${route.name as string}` : routeId;
+  record({
+    actor,
+    action: active ? "route.resume" : "route.suspend",
+    subjectKind: "route",
+    subjectId: routeId,
+    subjectLabel: label,
+    summary: `${active ? "Resumed" : "Suspended"} ${label}`,
+  });
 }
 
 export function listAllRoutes(): { id: string; code: string; name: string; slug: string; corridor: string; active: number; stops: number }[] {
@@ -1006,13 +1340,10 @@ export function listAllRoutes(): { id: string; code: string; name: string; slug:
   }));
 }
 
-export function createStop(input: {
-  name: string;
-  area: string;
-  landmark: string;
-  lat: number;
-  lng: number;
-}): string {
+export function createStop(
+  input: { name: string; area: string; landmark: string; lat: number; lng: number },
+  actor: Actor,
+): string {
   const slug = input.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -1022,5 +1353,15 @@ export function createStop(input: {
   db()
     .prepare("INSERT INTO stops (id, name, slug, area, landmark, lat, lng) VALUES (?,?,?,?,?,?,?)")
     .run(id, input.name.trim(), `${slug}-${id.slice(-4)}`, input.area.trim(), input.landmark.trim(), input.lat, input.lng);
+
+  record({
+    actor,
+    action: "stop.create",
+    subjectKind: "stop",
+    subjectId: id,
+    subjectLabel: input.name.trim(),
+    summary: `Added the ${input.name.trim()} stage in ${input.area.trim()} (${input.landmark.trim()})`,
+    detail: { lat: input.lat, lng: input.lng },
+  });
   return id;
 }

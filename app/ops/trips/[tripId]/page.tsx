@@ -9,6 +9,7 @@ import {
   resolveIncidentAction,
 } from "@/app/ops-actions";
 import { ActionForm, SelectField, TextAreaField } from "@/components/action-form";
+import { AuditList } from "@/components/audit-list";
 import {
   Badge,
   BookingStatusBadge,
@@ -20,6 +21,7 @@ import {
   Stat,
   TripStatusBadge,
 } from "@/components/ui";
+import { subjectHistory } from "@/lib/audit";
 import { getNetworkAdmin, getOperatorSession } from "@/lib/auth";
 import { formatKes } from "@/lib/domain/fares";
 import { formatServiceDate, relativeMinutes } from "@/lib/domain/time";
@@ -58,6 +60,7 @@ export default async function OpsTripPage({ params }: PageProps) {
   const manifest = tripManifest(tripId);
   const incidents = tripIncidents(tripId);
   const arrivals = new Map(tripStopEvents(tripId).map((e) => [e.stopId, e.arrivedAt]));
+  const history = subjectHistory("trip", tripId, 25);
 
   const fleet = listFleet(trip.trip.serviceDate);
   const drivers = listDrivers(trip.trip.serviceDate).filter((d) => d.active === 1);
@@ -215,6 +218,18 @@ export default async function OpsTripPage({ params }: PageProps) {
                 </table>
               </div>
             )}
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="History"
+              subtitle="Every change made to this departure, and who made it"
+            />
+            <AuditList
+              events={history}
+              emptyTitle="Untouched"
+              emptyBody="Nobody has delayed, reassigned or cancelled this departure."
+            />
           </Card>
 
           {incidents.length > 0 ? (

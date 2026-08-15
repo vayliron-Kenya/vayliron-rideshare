@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { db } from "@/lib/db";
+import { listAudit, subjectHistory, type Actor } from "@/lib/audit";
+import { db, readSchema } from "@/lib/db";
 import { buildTimetable } from "@/lib/domain/schedule";
 import { trackTrip } from "@/lib/domain/tracking";
 import { nairobiInstant } from "@/lib/domain/time";
@@ -20,11 +21,21 @@ import {
   reinstateTrip,
   setEmployeeActive,
   setTripDelay,
+  updateCompanyContract,
   tripStopEvents,
   updateCompanyPolicy,
 } from "@/lib/ops";
 import { boardByPassCode, closeTrip, createBooking, getTrip, takenSeats } from "@/lib/queries";
 import type { RouteStop } from "@/lib/types";
+
+const CONTROLLER: Actor = { kind: "operator", id: "opr_1", name: "Naliaka Wekesa" };
+const DRIVER: Actor = { kind: "driver", id: "drv_1", name: "Peter Mwangi" };
+const HR: Actor = {
+  kind: "employee",
+  id: "emp_1",
+  name: "Rider 1",
+  companyId: "cmp_t",
+};
 
 const SERVICE_DATE = "2026-08-17"; // a Monday
 const TRIP_ID = "trp_test";
@@ -46,6 +57,7 @@ function reset() {
     "vehicles",
     "drivers",
     "operators",
+    "audit_events",
   ]) {
     conn.prepare(`DELETE FROM ${table}`).run();
   }
@@ -133,7 +145,7 @@ describe("cancelling a departure", () => {
     book("emp_1");
     book("emp_2");
 
-    expect(cancelTrip(TRIP_ID, "Breakdown at Ruiru")).toBe(2);
+    expect(cancelTrip(TRIP_ID, "Breakdown at Ruiru", CONTROLLER)).toBe(2);
 
     const trip = getTrip(TRIP_ID)!;
     expect(trip.trip.status).toBe("cancelled");
@@ -143,7 +155,7 @@ describe("cancelling a departure", () => {
 
   it("takes the trip off the riders' upcoming list rather than stranding them", () => {
     const { booking } = book("emp_1");
-    cancelTrip(TRIP_ID, "No unit available");
+    cancelTrip(TRIP_ID, "No unit available", CONTROLLER);
 
     const row = db().prepare("SELECT status FROM bookings WHERE id = ?").get(booking.id) as {
       status: string;
@@ -153,13 +165,13 @@ describe("cancelling a departure", () => {
 
   it("refuses to cancel a departure that has already run", () => {
     db().prepare("UPDATE trips SET status = 'completed' WHERE id = ?").run(TRIP_ID);
-    expect(() => cancelTrip(TRIP_ID, "too late")).toThrow(OpsError);
+    expect(() => cancelTrip(TRIP_ID, "too late", CONTROLLER)).toThrow(OpsError);
   });
 
   it("can be reinstated, without silently re-selling the released seats", () => {
     book("emp_1");
-    cancelTrip(TRIP_ID, "Roads flooded");
-    reinstateTrip(TRIP_ID);
+    cancelTrip(TRIP_ID, "Roads flooded", CONTROLLER);
+    reinstateTrip(TRIP_ID, CONTROLLER);
 
     const trip = getTrip(TRIP_ID)!;
     expect(trip.trip.status).toBe("scheduled");
@@ -173,7 +185,7 @@ describe("reassigning a departure", () => {
 
   it("swaps in a bigger bus and lifts the capacity", () => {
     book("emp_1");
-    reassignVehicle(TRIP_ID, "veh_big");
+    reassignVehicle(TRIP_ID, "veh_big", CONTROLLER);
 
     const trip = getTrip(TRIP_ID)!;
     expect(trip.vehicle.plate).toBe("KDA 003C");
@@ -185,19 +197,19 @@ describe("reassigning a departure", () => {
     book("emp_2");
     book("emp_3");
 
-    expect(() => reassignVehicle(TRIP_ID, "veh_tiny")).toThrow(/3 seats are already sold/);
+    expect(() => reassignVehicle(TRIP_ID, "veh_tiny", CONTROLLER)).toThrow(/3 seats are already sold/);
     expect(getTrip(TRIP_ID)!.trip.capacity).toBe(4);
   });
 
   it("refuses a replacement where a sold seat number does not exist", () => {
     // Only one rider, but they hold seat 4 — which a two-seater does not have.
     book("emp_1", TRIP_ID, 4);
-    expect(() => reassignVehicle(TRIP_ID, "veh_tiny")).toThrow(/Seat 4 is sold/);
+    expect(() => reassignVehicle(TRIP_ID, "veh_tiny", CONTROLLER)).toThrow(/Seat 4 is sold/);
   });
 
   it("will not roster a driver who has been stood down", () => {
-    expect(() => reassignDriver(TRIP_ID, "drv_off")).toThrow(/not on the active roster/);
-    expect(() => reassignDriver(TRIP_ID, "drv_2")).not.toThrow();
+    expect(() => reassignDriver(TRIP_ID, "drv_off", CONTROLLER)).toThrow(/not on the active roster/);
+    expect(() => reassignDriver(TRIP_ID, "drv_2", CONTROLLER)).not.toThrow();
     expect(getTrip(TRIP_ID)!.driver.name).toBe("Alice Wanjiru");
   });
 });
@@ -207,7 +219,7 @@ describe("delays", () => {
 
   it("pushes every arrival time down the line", () => {
     const before = getTrip(TRIP_ID)!.timetable.map((s) => s.time);
-    setTripDelay(TRIP_ID, 15);
+    setTripDelay(TRIP_ID, 15, CONTROLLER);
     const after = getTrip(TRIP_ID)!.timetable;
 
     expect(after[0].time).not.toBe(before[0]);
@@ -215,10 +227,10 @@ describe("delays", () => {
   });
 
   it("is clamped to something a shift could survive", () => {
-    setTripDelay(TRIP_ID, 9999);
+    setTripDelay(TRIP_ID, 9999, CONTROLLER);
     expect(getTrip(TRIP_ID)!.trip.delayMinutes).toBe(240);
 
-    setTripDelay(TRIP_ID, -30);
+    setTripDelay(TRIP_ID, -30, CONTROLLER);
     expect(getTrip(TRIP_ID)!.trip.delayMinutes).toBe(0);
   });
 
@@ -234,36 +246,39 @@ describe("delays", () => {
   });
 
   it("compounds when a second incident is reported", () => {
-    raiseIncident({
-      tripId: TRIP_ID,
-      reporterKind: "driver",
-      reporterId: "drv_1",
-      kind: "traffic",
-      note: "Jam at Githurai",
-      delayMinutes: 10,
-    });
-    raiseIncident({
-      tripId: TRIP_ID,
-      reporterKind: "driver",
-      reporterId: "drv_1",
-      kind: "weather",
-      note: "Heavy rain",
-      delayMinutes: 8,
-    });
+    raiseIncident(
+      {
+        tripId: TRIP_ID,
+        kind: "traffic",
+        note: "Jam at Githurai",
+        delayMinutes: 10,
+      },
+      DRIVER,
+    );
+    raiseIncident(
+      {
+        tripId: TRIP_ID,
+        kind: "weather",
+        note: "Heavy rain",
+        delayMinutes: 8,
+      },
+      DRIVER,
+    );
 
     expect(getTrip(TRIP_ID)!.trip.delayMinutes).toBe(18);
   });
 
   it("does not let a stack of incidents run past the clamp", () => {
     for (let i = 0; i < 10; i += 1) {
-      raiseIncident({
+      raiseIncident(
+      {
         tripId: TRIP_ID,
-        reporterKind: "operator",
-        reporterId: "opr_1",
         kind: "traffic",
         note: `Jam ${i}`,
         delayMinutes: 60,
-      });
+      },
+      CONTROLLER,
+    );
     }
     expect(getTrip(TRIP_ID)!.trip.delayMinutes).toBe(240);
   });
@@ -273,7 +288,7 @@ describe("calling a stage", () => {
   beforeEach(reset);
 
   it("records the arrival", () => {
-    markStopArrived(TRIP_ID, "stp_a");
+    markStopArrived(TRIP_ID, "stp_a", DRIVER);
     expect(tripStopEvents(TRIP_ID).map((e) => e.stopId)).toEqual(["stp_a"]);
   });
 
@@ -283,9 +298,9 @@ describe("calling a stage", () => {
     db()
       .prepare("UPDATE trips SET service_date = '2099-01-05' WHERE id = ?")
       .run(TRIP_ID);
-    setTripDelay(TRIP_ID, 20);
+    setTripDelay(TRIP_ID, 20, CONTROLLER);
 
-    const result = markStopArrived(TRIP_ID, "stp_a");
+    const result = markStopArrived(TRIP_ID, "stp_a", DRIVER);
 
     expect(result?.delayMinutes).toBe(20);
     expect(getTrip(TRIP_ID)!.trip.delayMinutes).toBe(20);
@@ -308,12 +323,12 @@ describe("calling a stage", () => {
       .prepare("UPDATE trips SET service_date = ?, depart_time = ? WHERE id = ?")
       .run(date, time, TRIP_ID);
 
-    const result = markStopArrived(TRIP_ID, "stp_a");
+    const result = markStopArrived(TRIP_ID, "stp_a", DRIVER);
     expect(result!.delayMinutes).toBeGreaterThan(100);
   });
 
   it("ignores a stage that is not on the trip", () => {
-    expect(markStopArrived(TRIP_ID, "stp_nowhere")).toBeNull();
+    expect(markStopArrived(TRIP_ID, "stp_nowhere", DRIVER)).toBeNull();
   });
 });
 
@@ -332,7 +347,7 @@ describe("the network board", () => {
   });
 
   it("stops counting seats on a cancelled departure as offered", () => {
-    cancelTrip(TRIP_ID, "Unit off the road");
+    cancelTrip(TRIP_ID, "Unit off the road", CONTROLLER);
     const snapshot = networkSnapshot(SERVICE_DATE);
     expect(snapshot.cancelled).toBe(1);
     expect(snapshot.seatsOffered).toBe(49);
@@ -366,7 +381,7 @@ describe("managing staff", () => {
         homeStopId: null,
         workStopId: null,
         role: "employee",
-      }),
+      }, HR),
     ).toThrow(/must end in @tandaza.co.ke/);
   });
 
@@ -381,29 +396,29 @@ describe("managing staff", () => {
         homeStopId: null,
         workStopId: null,
         role: "employee",
-      }),
+      }, HR),
     ).toThrow(PeopleError);
   });
 
   it("releases upcoming seats when someone is deactivated", () => {
     book("emp_2");
-    const { releasedSeats } = setEmployeeActive("emp_2", "cmp_t", false);
+    const { releasedSeats } = setEmployeeActive("emp_2", "cmp_t", false, HR);
 
     expect(releasedSeats).toBe(1);
     expect(takenSeats(TRIP_ID)).toEqual([]);
   });
 
   it("will not let one company touch another's staff", () => {
-    expect(() => setEmployeeActive("emp_2", "cmp_other", false)).toThrow(PeopleError);
+    expect(() => setEmployeeActive("emp_2", "cmp_other", false, HR)).toThrow(PeopleError);
   });
 
   it("rejects a subsidy share outside 0–100%", () => {
     expect(() =>
-      updateCompanyPolicy("cmp_t", {
-        subsidyBps: 12000,
-        monthlyCapKes: 0,
-        billingEmail: "ap@tandaza.co.ke",
-      }),
+      updateCompanyPolicy(
+        "cmp_t",
+        { subsidyBps: 12000, monthlyCapKes: 0, billingEmail: "ap@tandaza.co.ke" },
+        HR,
+      ),
     ).toThrow(PeopleError);
   });
 });
@@ -415,7 +430,7 @@ describe("the monthly invoice", () => {
     const first = book("emp_1");
     book("emp_2");
     boardByPassCode(TRIP_ID, first.booking.passCode);
-    closeTrip(TRIP_ID); // emp_2 becomes a no-show
+    closeTrip(TRIP_ID, CONTROLLER); // emp_2 becomes a no-show
 
     const invoice = monthlyInvoice("cmp_t", SERVICE_DATE.slice(0, 7))!;
     expect(invoice.trips).toBe(2);
@@ -426,7 +441,7 @@ describe("the monthly invoice", () => {
 
   it("never bills a cancelled seat", () => {
     book("emp_1");
-    cancelTrip(TRIP_ID, "Unit off the road");
+    cancelTrip(TRIP_ID, "Unit off the road", CONTROLLER);
 
     const invoice = monthlyInvoice("cmp_t", SERVICE_DATE.slice(0, 7))!;
     expect(invoice.trips).toBe(0);
@@ -435,7 +450,118 @@ describe("the monthly invoice", () => {
 
   it("excludes a month with no travel", () => {
     book("emp_1");
-    closeTrip(TRIP_ID);
+    closeTrip(TRIP_ID, CONTROLLER);
     expect(monthlyInvoice("cmp_t", "2026-01")!.employerTotalKes).toBe(0);
+  });
+});
+
+describe("the audit trail", () => {
+  beforeEach(reset);
+
+  it("names who cancelled a run and why", () => {
+    book("emp_1");
+    cancelTrip(TRIP_ID, "Breakdown at Ruiru", CONTROLLER);
+
+    const network = listAudit({ action: "trip.cancel" }).filter((e) => e.companyId === null);
+    expect(network).toHaveLength(1);
+    expect(network[0]).toMatchObject({
+      actorName: "Naliaka Wekesa",
+      actorKind: "operator",
+      subjectKind: "trip",
+      subjectId: TRIP_ID,
+    });
+    expect(network[0].summary).toContain("Breakdown at Ruiru");
+    expect(network[0].detail).toMatchObject({ releasedSeats: 1 });
+  });
+
+  it("shows an affected client the cancellation in their own log", () => {
+    book("emp_1");
+    cancelTrip(TRIP_ID, "Roads flooded", CONTROLLER);
+
+    const clientView = listAudit({ companyId: "cmp_t" });
+    expect(clientView).toHaveLength(1);
+    expect(clientView[0].summary).toContain("Vayliron cancelled");
+  });
+
+  it("does not leak a cancellation to a client with nobody on board", () => {
+    cancelTrip(TRIP_ID, "Empty run", CONTROLLER);
+    expect(listAudit({ companyId: "cmp_t" })).toHaveLength(0);
+  });
+
+  it("keeps the subject label readable after the run is gone", () => {
+    cancelTrip(TRIP_ID, "Unit off the road", CONTROLLER);
+    db().prepare("DELETE FROM trips WHERE id = ?").run(TRIP_ID);
+
+    const [entry] = listAudit({ action: "trip.cancel" });
+    expect(entry.subjectLabel).toBe("VL-99 06:30 on 2026-08-17");
+  });
+
+  it("records both sides of a reassignment", () => {
+    reassignVehicle(TRIP_ID, "veh_big", CONTROLLER);
+
+    const [entry] = listAudit({ action: "trip.reassign_vehicle" });
+    expect(entry.detail).toMatchObject({ from: "KDA 001A", to: "KDA 003C" });
+  });
+
+  it("attributes a delay to the driver who reported it", () => {
+    setTripDelay(TRIP_ID, 15, DRIVER);
+
+    const [entry] = listAudit({ action: "trip.delay" });
+    expect(entry.actorKind).toBe("driver");
+    expect(entry.actorName).toBe("Peter Mwangi");
+    expect(entry.detail).toMatchObject({ from: 0, to: 15 });
+  });
+
+  it("does not log a delay that changed nothing", () => {
+    setTripDelay(TRIP_ID, 0, CONTROLLER);
+    expect(listAudit({ action: "trip.delay" })).toHaveLength(0);
+  });
+
+  it("scopes staff changes to the client who made them", () => {
+    setEmployeeActive("emp_2", "cmp_t", false, HR);
+
+    const [entry] = listAudit({ companyId: "cmp_t" });
+    expect(entry.action).toBe("employee.deactivate");
+    expect(entry.actorKind).toBe("employee");
+    expect(entry.detail).toMatchObject({ releasedSeats: 0 });
+  });
+
+  it("shows a client a contract change Vayliron made on their account", () => {
+    updateCompanyContract("cmp_t", { subsidyBps: 5000, monthlyCapKes: 3000 }, CONTROLLER);
+
+    const [entry] = listAudit({ companyId: "cmp_t" });
+    expect(entry.actorKind).toBe("operator");
+    expect(entry.summary).toContain("Vayliron set the employer share to 50%");
+    expect(entry.detail).toMatchObject({ subsidyFrom: 10000, subsidyTo: 5000 });
+  });
+
+  it("collects one departure's whole history in order", () => {
+    setTripDelay(TRIP_ID, 10, CONTROLLER);
+    reassignVehicle(TRIP_ID, "veh_big", CONTROLLER);
+    cancelTrip(TRIP_ID, "Unit off the road", CONTROLLER);
+
+    const history = subjectHistory("trip", TRIP_ID);
+    expect(history.map((e) => e.action)).toEqual([
+      "trip.cancel",
+      "trip.reassign_vehicle",
+      "trip.delay",
+    ]);
+  });
+
+  it("refuses an incident from someone who is neither crew nor control", () => {
+    expect(() =>
+      raiseIncident(
+        { tripId: TRIP_ID, kind: "traffic", note: "Jam", delayMinutes: 5 },
+        HR,
+      ),
+    ).toThrow(OpsError);
+  });
+
+  it("survives an audit write failing without losing the operational change", () => {
+    // A trail that can take the network down with it is worse than no trail.
+    db().prepare("DROP TABLE audit_events").run();
+    expect(() => cancelTrip(TRIP_ID, "Roads flooded", CONTROLLER)).not.toThrow();
+    expect(getTrip(TRIP_ID)!.trip.status).toBe("cancelled");
+    db().exec(readSchema());
   });
 });

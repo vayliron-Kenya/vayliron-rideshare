@@ -189,3 +189,35 @@ CREATE TABLE IF NOT EXISTS incidents (
 
 CREATE INDEX IF NOT EXISTS idx_incidents_trip ON incidents(trip_id);
 CREATE INDEX IF NOT EXISTS idx_incidents_open ON incidents(created_at DESC) WHERE resolved_at IS NULL;
+
+-- Who changed what.
+--
+-- Scoped deliberately to administrative actions — cancelling a run, moving a
+-- bus, editing the subsidy, adding or removing staff. High-volume domain
+-- events are not duplicated here: a boarding already has `bookings.boarded_at`
+-- and a rider's own booking is the booking row itself, so logging those would
+-- bury the handful of entries anyone will ever need to find.
+--
+-- Actor and subject names are stored as they read at the time. A trail that
+-- says "Naliaka Wekesa cancelled VL-01 06:00" must keep saying that after the
+-- person leaves and the departure is purged.
+CREATE TABLE IF NOT EXISTS audit_events (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  at            TEXT NOT NULL,
+  actor_kind    TEXT NOT NULL
+                CHECK (actor_kind IN ('employee', 'driver', 'operator', 'system')),
+  actor_id      TEXT NOT NULL,
+  actor_name    TEXT NOT NULL,
+  action        TEXT NOT NULL,               -- dotted verb, e.g. "trip.cancel"
+  subject_kind  TEXT NOT NULL,               -- trip | employee | company | ...
+  subject_id    TEXT NOT NULL,
+  subject_label TEXT NOT NULL,
+  summary       TEXT NOT NULL,               -- one line, already written for a human
+  detail        TEXT,                        -- optional JSON: what changed
+  -- Set when the entry belongs in a client's own view of their account.
+  company_id    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_events(at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_subject ON audit_events(subject_kind, subject_id, at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_company ON audit_events(company_id, at DESC);
