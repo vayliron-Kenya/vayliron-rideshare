@@ -1,0 +1,25 @@
+node_modules/
+.pnp
+.pnp.*
+
+.next/
+out/
+build/
+dist/
+
+# Local seeded database — rebuild it with `npm run db:reset`.
+data/
+
+# Smoke-test screenshots and scratch space.
+.smoke/
+.tmp/
+
+.env
+.env*.local
+
+*.tsbuildinfo
+next-env.d.ts
+
+npm-debug.log*
+yarn-error.log*
+.DS_Store
