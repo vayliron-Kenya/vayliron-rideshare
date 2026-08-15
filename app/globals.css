@@ -1,40 +1,125 @@
 @import "tailwindcss";
 
+/*
+ * Vayliron brand palette.
+ *
+ * Taken from vayliron.com itself, not eyeballed: the site's stylesheet ships a
+ * teal-green default that the live page then overrides in an inline :root
+ * block with the real brand values —
+ *
+ *   --primary-color:   201, 71, 255   #C947FF
+ *   --secondary-color:   1,  1,  52   #010134
+ *
+ * so the brand is purple on deep indigo. The supporting purples (#792B99 solid
+ * buttons, #0D0030 headings, #E9B3FF and #F2D2FF tints) and the neutral and
+ * status colours below are lifted from the same stylesheet.
+ *
+ * The site is light-first with a `.dark` class for its dark mode, so this app
+ * is light by default and follows the reader's system setting into dark.
+ *
+ * Status colours are darkened for light mode. Vayliron's raw #ECB238 and
+ * #47A1E5 are fine as fills on their site but fail contrast as small text on a
+ * tinted background, which is how this app uses them; the dark theme restores
+ * the raw brand values, where they read correctly.
+ */
 @theme {
-  --color-ink: #080b10;
-  --color-surface: #10161f;
-  --color-raised: #18202c;
-  --color-line: #24304180;
-  --color-edge: #243041;
-  --color-body: #e7edf6;
-  --color-muted: #94a3b8;
-  --color-faint: #64748b;
+  /* Surfaces, lightest to deepest */
+  --color-ink: #ffffff;
+  --color-surface: #ffffff;
+  --color-raised: #f5f2fa;
+  --color-line: #eae7f1;
+  --color-edge: #ddd9e8;
 
-  /* Acacia green — the brand mark, and the "good news" colour throughout. */
-  --color-brand: #16a97a;
-  --color-brand-soft: #0f2a22;
-  --color-brand-bright: #34d8a2;
+  /* Type */
+  --color-body: #0d0030;
+  --color-muted: #5b5670;
+  --color-faint: #78738d;
 
-  --color-amber: #f0a83c;
-  --color-amber-soft: #2b2113;
-  --color-flame: #e2573f;
-  --color-flame-soft: #2c1713;
-  --color-sky: #4c9bf5;
-  --color-sky-soft: #12233c;
+  /* Brand */
+  --color-brand: #792b99;
+  --color-brand-hover: #5f2179;
+  --color-brand-bright: #c947ff;
+  --color-brand-soft: #f6e7ff;
+  --color-deep: #010134;
+  /* Text that sits on a brand-filled surface. */
+  --color-on-brand: #ffffff;
+  /*
+   * Accent *text*. The vivid #C947FF is the brand mark, but it only reaches
+   * 3:1 on white — fine for a fill or a graphic, not for the route codes and
+   * highlights this app sets in it. Light mode uses the deep purple for type
+   * and keeps the vivid one for fills; dark mode can afford the bright tint.
+   */
+  --color-accent: #792b99;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+  /*
+   * Status. The `-vivid` pair is Vayliron's raw #ECB238 and #FF8367, kept for
+   * fills and graphics where nothing has to be legible on top of them; the
+   * plain tokens are darkened so the same colours work as small text on their
+   * tinted backgrounds.
+   */
+  --color-amber: #9a6400;
+  --color-amber-soft: #fdf4e0;
+  --color-amber-vivid: #ecb238;
+  --color-flame: #c2371b;
+  --color-flame-soft: #ffeae4;
+  --color-flame-vivid: #ff8367;
+  --color-sky: #1a6bb0;
+  --color-sky-soft: #e6f1fb;
+
+  /*
+   * Gilmer is Vayliron's typeface. It is commercially licensed, so it is
+   * declared first and used when an installation has it, with a system stack
+   * behind it rather than a bundled substitute.
+   */
+  --font-sans: Gilmer, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
 }
 
+/*
+ * Dark mode redefines the same custom properties on :root rather than opening
+ * a second @theme block — Tailwind only reads @theme at the top level, and a
+ * nested one leaks its values into every mode.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-ink: #0b0022;
+    --color-surface: #150a33;
+    --color-raised: #1e1140;
+    --color-line: #2c2150;
+    --color-edge: #382a60;
+
+    --color-body: #ffffff;
+    --color-muted: #a6a6a6;
+    --color-faint: #7f7996;
+
+    --color-brand: #c947ff;
+    --color-brand-hover: #d873ff;
+    --color-brand-bright: #e9b3ff;
+    --color-brand-soft: #2b1145;
+    --color-deep: #010134;
+    --color-on-brand: #12002c;
+    --color-accent: #e9b3ff;
+
+    --color-amber: #ecb238;
+    --color-amber-soft: #33260f;
+    --color-amber-vivid: #ecb238;
+    --color-flame: #ff8367;
+    --color-flame-soft: #3a1a12;
+    --color-flame-vivid: #ff8367;
+    --color-sky: #47a1e5;
+    --color-sky-soft: #10243a;
+  }
+}
+
 html {
-  color-scheme: dark;
+  color-scheme: light dark;
 }
 
 body {
   background:
-    radial-gradient(1100px 620px at 82% -8%, #14312a 0%, transparent 58%),
-    radial-gradient(900px 500px at 8% 0%, #1a2436 0%, transparent 52%),
+    radial-gradient(1100px 620px at 82% -8%, color-mix(in srgb, var(--color-brand-bright) 12%, transparent) 0%, transparent 58%),
+    radial-gradient(900px 500px at 8% 0%, color-mix(in srgb, var(--color-deep) 7%, transparent) 0%, transparent 52%),
     var(--color-ink);
   color: var(--color-body);
   min-height: 100dvh;
@@ -47,8 +132,8 @@ body {
 }
 
 ::selection {
-  background: var(--color-brand);
-  color: #04120d;
+  background: var(--color-brand-bright);
+  color: #12002c;
 }
 
 *:focus-visible {

@@ -12,7 +12,7 @@ function ScanButton() {
     <button
       type="submit"
       disabled={pending}
-      className="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-brand-bright disabled:opacity-60"
+      className="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-on-brand transition-colors hover:bg-brand-hover disabled:opacity-60"
     >
       {pending ? "Checking…" : "Board"}
     </button>
@@ -67,7 +67,7 @@ export function BoardingForm({ tripId }: { tripId: string }) {
         <p
           data-board-result="ok"
           role="status"
-          className="mt-3 rounded-lg bg-brand-soft px-4 py-2.5 text-sm text-brand-bright"
+          className="mt-3 rounded-lg bg-brand-soft px-4 py-2.5 text-sm text-accent"
         >
           {state.message}
         </p>

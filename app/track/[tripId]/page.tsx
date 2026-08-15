@@ -48,7 +48,7 @@ export default async function TrackPage({ params }: PageProps) {
 
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight text-body">
-            <span className="tabular text-brand-bright">{trip.route.code}</span>{" "}
+            <span className="tabular text-accent">{trip.route.code}</span>{" "}
             {trip.route.name}
           </h1>
           <DirectionBadge direction={trip.trip.direction} />
@@ -97,7 +97,7 @@ export default async function TrackPage({ params }: PageProps) {
           </div>
           <div>
             <p className="text-[11px] uppercase tracking-wider text-faint">Pass code</p>
-            <p className="mt-0.5 font-mono text-sm font-semibold tracking-[0.2em] text-brand-bright">
+            <p className="mt-0.5 font-mono text-sm font-semibold tracking-[0.2em] text-accent">
               {myBooking.booking.passCode}
             </p>
           </div>

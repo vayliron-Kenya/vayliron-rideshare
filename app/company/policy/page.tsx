@@ -102,7 +102,7 @@ export default async function CompanyPolicyPage() {
                         <td className="tabular px-5 py-3 text-right">
                           {formatKes(band.fareKes)}
                         </td>
-                        <td className="tabular px-5 py-3 text-right text-brand-bright">
+                        <td className="tabular px-5 py-3 text-right text-accent">
                           {formatKes(split.employerKes)}
                         </td>
                         <td className="tabular px-5 py-3 text-right text-body">

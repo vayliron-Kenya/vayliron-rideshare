@@ -1,4 +1,4 @@
-# Vayliron
+# Vayliron Shared Transportation
 
 A corporate bus line for Nairobi, as four applications over one network:
 
@@ -90,6 +90,44 @@ schedule, swap the bus or the driver, cancel it with a reason, or resolve an
 incident. `/ops/fleet` and `/ops/clients` cover utilisation and revenue;
 `/ops/audit` is the network-wide trail of who changed what; `/ops/network`
 (network admins only) suspends lines and adds stages.
+
+## Brand
+
+The palette is taken from vayliron.com rather than eyeballed, and the site
+takes some reading. Its stylesheet ships a teal-green default that the live
+page then overrides in an inline `:root` block:
+
+```css
+:root {
+  --primary-color:  201, 71, 255;   /* #C947FF */
+  --secondary-color:  1,  1,  52;   /* #010134 */
+}
+```
+
+So the brand is purple on deep indigo, not the green in the vendor defaults.
+The supporting values — `#792B99` solid buttons, `#0D0030` headings, the
+`#E9B3FF` and `#F2D2FF` tints, the `#ECB238` / `#FF8367` / `#47A1E5` status
+trio and the neutral ramp — come from the same stylesheet.
+
+Two deliberate departures, both about legibility rather than taste:
+
+- **Accent text uses `#792B99`, not `#C947FF`.** The vivid primary only reaches
+  3:1 on white. That is fine for a fill or a logo, and this app sets route
+  codes and highlights in it, so light mode uses the deep purple for type and
+  keeps the vivid one for fills and graphics. Dark mode can afford the bright
+  tint and uses it.
+- **Status colours are darkened for light mode.** `#ECB238` and `#47A1E5` work
+  as fills on vayliron.com but fail as small text on a tinted background, which
+  is how badges here use them. The raw values are kept as `-vivid` tokens for
+  meters and graphics, and dark mode restores them everywhere.
+
+The site is light-first with a `.dark` class, so this app is light by default
+and follows the reader's system setting into dark. Every colour lives in
+`app/globals.css`; no component hard-codes one.
+
+**Gilmer** is Vayliron's typeface. It is commercially licensed, so it is
+declared first in the font stack and used wherever an installation has it,
+with a system stack behind it rather than a bundled lookalike.
 
 ## How the numbers work
 

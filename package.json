@@ -1,8 +1,8 @@
 {
-  "name": "vayliron-rideshare",
+  "name": "vayliron-shared-transportation",
   "version": "0.1.0",
   "private": true,
-  "description": "Vayliron \u2014 corporate bus line platform for Nairobi commuters",
+  "description": "Vayliron Shared Transportation \u2014 corporate bus line platform for Nairobi commuters",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

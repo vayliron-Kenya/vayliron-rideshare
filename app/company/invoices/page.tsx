@@ -79,7 +79,7 @@ export default async function CompanyInvoicesPage({ searchParams }: PageProps) {
         </div>
         <a
           href={`/api/company/invoice.csv?month=${selected}`}
-          className="rounded-xl border border-edge px-4 py-2 text-sm text-muted transition-colors hover:border-brand/60 hover:text-brand-bright"
+          className="rounded-xl border border-edge px-4 py-2 text-sm text-muted transition-colors hover:border-brand/60 hover:text-accent"
         >
           Download CSV
         </a>
@@ -92,7 +92,7 @@ export default async function CompanyInvoicesPage({ searchParams }: PageProps) {
             href={`/company/invoices?month=${option}`}
             className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
               option === selected
-                ? "border-brand/60 bg-brand-soft text-brand-bright"
+                ? "border-brand/60 bg-brand-soft text-accent"
                 : "border-edge text-muted hover:text-body"
             }`}
           >
@@ -171,7 +171,7 @@ export default async function CompanyInvoicesPage({ searchParams }: PageProps) {
                     Total
                   </td>
                   <td className="tabular px-5 py-3 text-right font-semibold">{invoice.trips}</td>
-                  <td className="tabular px-5 py-3 text-right font-semibold text-brand-bright">
+                  <td className="tabular px-5 py-3 text-right font-semibold text-accent">
                     {formatKes(invoice.employerTotalKes)}
                   </td>
                   <td className="tabular px-5 py-3 text-right font-semibold">

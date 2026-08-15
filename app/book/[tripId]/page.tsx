@@ -94,7 +94,7 @@ export default async function BookPage({ params, searchParams }: PageProps) {
           action={
             <Link
               href={`/routes/${trip.route.slug}`}
-              className="inline-flex rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-ink"
+              className="inline-flex rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-on-brand"
             >
               See later departures
             </Link>
@@ -107,7 +107,7 @@ export default async function BookPage({ params, searchParams }: PageProps) {
           action={
             <Link
               href={`/routes/${trip.route.slug}`}
-              className="inline-flex rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-ink"
+              className="inline-flex rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-on-brand"
             >
               See later departures
             </Link>
@@ -117,7 +117,7 @@ export default async function BookPage({ params, searchParams }: PageProps) {
         <>
           <Card className="px-5 py-3">
             <p className="text-xs text-muted">
-              <span className="tabular font-semibold text-brand-bright">
+              <span className="tabular font-semibold text-accent">
                 {trip.seatsAvailable}
               </span>{" "}
               of {trip.trip.capacity} seats still free ·{" "}

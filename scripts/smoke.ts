@@ -240,6 +240,29 @@ async function main() {
   check("driver app fits a phone", (await page.locator("body").boundingBox())!.width <= 430);
   await page.screenshot({ path: path.join(SHOTS, "15-driver-phone.png"), fullPage: true });
 
+  /* ---------------------------------------------------------------- *
+   * Dark mode — vayliron.com ships one, so this app follows the system
+   * ---------------------------------------------------------------- */
+
+  const darkCtx = await browser.newContext({
+    viewport: { width: 1440, height: 1000 },
+    colorScheme: "dark",
+  });
+  const darkPage = await darkCtx.newPage();
+  await darkPage.goto(`${BASE}/`, { waitUntil: "networkidle" });
+  await darkPage.fill("#email", RIDER);
+  await darkPage.click('button[type="submit"]');
+  await darkPage.waitForURL("**/dashboard", { timeout: 15000 });
+
+  const bodyBg = await darkPage.evaluate(
+    () => getComputedStyle(document.body).backgroundColor,
+  );
+  // The light palette paints on white; the dark one on deep indigo.
+  const isDark = !bodyBg.includes("255, 255, 255");
+  check("dark mode follows the system setting", isDark, bodyBg);
+  await darkPage.screenshot({ path: path.join(SHOTS, "18-dark-mode.png"), fullPage: true });
+  await darkCtx.close();
+
   await browser.close();
 
   const failed = checks.filter((c) => !c.ok);

@@ -43,7 +43,7 @@ export default function RoutesPage() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="tabular text-sm font-semibold text-brand-bright">
+                  <span className="tabular text-sm font-semibold text-accent">
                     {route.code}
                   </span>
                   <h2 className="text-base font-semibold text-body">{route.name}</h2>
@@ -93,7 +93,7 @@ export default function RoutesPage() {
 
             <Link
               href={`/routes/${route.slug}`}
-              className="mt-4 inline-flex w-fit rounded-lg border border-edge px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/60 hover:text-brand-bright"
+              className="mt-4 inline-flex w-fit rounded-lg border border-edge px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/60 hover:text-accent"
             >
               Timetable &amp; seats →
             </Link>

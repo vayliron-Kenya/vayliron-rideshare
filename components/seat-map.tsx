@@ -25,7 +25,7 @@ export function SeatMap({
           onClick={() => onSelect(null)}
           className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
             selected === null
-              ? "bg-brand-soft text-brand-bright ring-1 ring-inset ring-brand/40"
+              ? "bg-brand-soft text-accent ring-1 ring-inset ring-brand/40"
               : "text-muted hover:text-body"
           }`}
         >
@@ -120,7 +120,7 @@ function SeatButton({
       aria-label={`Seat ${seatNo}, ${kind}`}
       className={`${base} ${
         selected
-          ? "border-brand bg-brand text-ink"
+          ? "border-brand bg-brand text-on-brand"
           : "border-edge bg-raised text-muted hover:border-brand/60 hover:text-body"
       }`}
     >

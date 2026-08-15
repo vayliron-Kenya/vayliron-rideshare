@@ -33,11 +33,15 @@ export default async function LandingPage() {
       <section className="grid items-start gap-10 lg:grid-cols-[1.15fr_0.85fr]">
         <div>
           <Badge tone="brand">Nairobi · Mon–Sat scheduled service</Badge>
-          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-body sm:text-5xl">
+          <p className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-accent">
+            Vayliron Shared Transportation
+          </p>
+          <h1 className="mt-2 text-4xl font-semibold tracking-tight text-body sm:text-5xl">
             Your staff, on a bus that shows up.
           </h1>
           <p className="mt-4 max-w-xl text-base leading-relaxed text-muted">
-            Vayliron runs {routes.length} scheduled corporate lines across {stops.length} stages —
+            Vayliron Shared Transportation runs {routes.length} scheduled corporate lines across{" "}
+            {stops.length} stages —
             Thika Road, Mombasa Road, Waiyaki Way, Ngong Road, Limuru Road, Jogoo Road,
             Lang&apos;ata and the airport. Staff reserve a numbered seat, watch the bus approach
             their stage, and board with a six-character pass. Finance gets the bill, split
@@ -53,7 +57,7 @@ export default async function LandingPage() {
             ].map((item) => (
               <div key={item.label}>
                 <dt className="text-xs uppercase tracking-wider text-faint">{item.label}</dt>
-                <dd className="tabular mt-1 text-2xl font-semibold text-brand-bright">{item.value}</dd>
+                <dd className="tabular mt-1 text-2xl font-semibold text-accent">{item.value}</dd>
               </div>
             ))}
           </dl>
@@ -63,7 +67,7 @@ export default async function LandingPage() {
               <Link
                 key={route.id}
                 href={`/routes/${route.slug}`}
-                className="rounded-full border border-edge px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/60 hover:text-brand-bright"
+                className="rounded-full border border-edge px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/60 hover:text-accent"
               >
                 <span className="tabular font-medium text-body">{route.code}</span> {route.name}
               </Link>
@@ -182,7 +186,7 @@ function AccountGroup({
       <dt className="text-[11px] uppercase tracking-wider text-faint">{title}</dt>
       {rows.map((row) => (
         <dd key={row.email} className="mt-1 text-xs">
-          <span className="font-mono text-brand-bright">{row.email}</span>
+          <span className="font-mono text-accent">{row.email}</span>
           <span className="text-faint"> — {row.note}</span>
         </dd>
       ))}

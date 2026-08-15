@@ -61,7 +61,7 @@ export default async function DriveRunPage({ params }: PageProps) {
         title="Not your run"
         body="You are not rostered on this departure. Check your list of runs for today."
         action={
-          <Link href="/drive" className="inline-flex rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-ink">
+          <Link href="/drive" className="inline-flex rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-on-brand">
             Back to my runs
           </Link>
         }
@@ -100,7 +100,7 @@ export default async function DriveRunPage({ params }: PageProps) {
             {trip.trip.departTime}
           </h1>
           <span className="text-base text-body">
-            <span className="tabular text-brand-bright">{trip.route.code}</span> {trip.route.name}
+            <span className="tabular text-accent">{trip.route.code}</span> {trip.route.name}
           </span>
           <DirectionBadge direction={trip.trip.direction} />
           <TripStatusBadge status={status} />
@@ -160,8 +160,8 @@ export default async function DriveRunPage({ params }: PageProps) {
                 disabled={running}
                 className={`w-full rounded-xl px-4 py-3 text-sm font-semibold transition-colors ${
                   running
-                    ? "cursor-default bg-brand-soft text-brand-bright"
-                    : "bg-brand text-ink hover:bg-brand-bright"
+                    ? "cursor-default bg-brand-soft text-accent"
+                    : "bg-brand text-on-brand hover:bg-brand-hover"
                 }`}
               >
                 {running ? "On the road" : "Start the run"}
@@ -197,7 +197,7 @@ export default async function DriveRunPage({ params }: PageProps) {
                     type="submit"
                     className={`tabular rounded-lg border px-3.5 py-2 text-xs transition-colors ${
                       trip.trip.delayMinutes === minutes
-                        ? "border-brand/60 bg-brand-soft text-brand-bright"
+                        ? "border-brand/60 bg-brand-soft text-accent"
                         : "border-edge text-muted hover:text-body"
                     }`}
                   >
@@ -263,7 +263,7 @@ export default async function DriveRunPage({ params }: PageProps) {
                     {boardingHere} on · {alightingHere} off
                   </p>
                 </div>
-                <span className="tabular shrink-0 text-sm text-brand-bright">{stop.time}</span>
+                <span className="tabular shrink-0 text-sm text-accent">{stop.time}</span>
 
                 {arrivedAt ? (
                   <Badge tone="brand">called {NAIROBI_CLOCK.format(new Date(arrivedAt))}</Badge>
@@ -273,7 +273,7 @@ export default async function DriveRunPage({ params }: PageProps) {
                     <input type="hidden" name="stopId" value={stop.id} />
                     <button
                       type="submit"
-                      className="rounded-lg border border-edge px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/60 hover:text-brand-bright"
+                      className="rounded-lg border border-edge px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/60 hover:text-accent"
                     >
                       Arrived
                     </button>
@@ -299,7 +299,7 @@ export default async function DriveRunPage({ params }: PageProps) {
                 <CardHeader
                   title={
                     <span className="flex items-center gap-2">
-                      <span className="tabular text-brand-bright">{stop.time}</span>
+                      <span className="tabular text-accent">{stop.time}</span>
                       {stop.name}
                     </span>
                   }

@@ -57,7 +57,7 @@ export default async function RouteDetailPage({ params, searchParams }: PageProp
           ← All routes
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <span className="tabular rounded-lg bg-brand-soft px-2.5 py-1 text-sm font-semibold text-brand-bright">
+          <span className="tabular rounded-lg bg-brand-soft px-2.5 py-1 text-sm font-semibold text-accent">
             {route.code}
           </span>
           <h1 className="text-2xl font-semibold tracking-tight text-body">{route.name}</h1>
@@ -90,7 +90,7 @@ export default async function RouteDetailPage({ params, searchParams }: PageProp
               href={href({ date })}
               className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
                 date === serviceDate
-                  ? "border-brand/60 bg-brand-soft text-brand-bright"
+                  ? "border-brand/60 bg-brand-soft text-accent"
                   : "border-edge text-muted hover:text-body"
               }`}
             >
@@ -134,7 +134,7 @@ export default async function RouteDetailPage({ params, searchParams }: PageProp
                         {stop.name}
                       </p>
                       {entry ? (
-                        <span className="tabular text-xs text-brand-bright">{entry.time}</span>
+                        <span className="tabular text-xs text-accent">{entry.time}</span>
                       ) : null}
                     </div>
                     <p className="mt-0.5 text-xs text-faint">

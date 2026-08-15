@@ -171,7 +171,7 @@ function SubmitButton({ disabled }: { disabled: boolean }) {
     <button
       type="submit"
       disabled={disabled || pending}
-      className="w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-brand-bright disabled:cursor-not-allowed disabled:opacity-50"
+      className="w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-on-brand transition-colors hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
     >
       {pending ? "Reserving…" : "Confirm seat"}
     </button>
@@ -231,7 +231,7 @@ function Line({
       <dt className={strong ? "text-body" : "text-muted"}>{label}</dt>
       <dd
         className={`tabular ${strong ? "text-base font-semibold text-body" : ""} ${
-          tone === "brand" ? "text-brand-bright" : "text-body"
+          tone === "brand" ? "text-accent" : "text-body"
         }`}
       >
         {value}

@@ -87,7 +87,7 @@ export default async function OpsTripPage({ params }: PageProps) {
             {trip.trip.departTime}
           </h1>
           <span className="text-lg text-body">
-            <span className="tabular text-brand-bright">{trip.route.code}</span> {trip.route.name}
+            <span className="tabular text-accent">{trip.route.code}</span> {trip.route.name}
           </span>
           <DirectionBadge direction={trip.trip.direction} />
           <TripStatusBadge status={trip.trip.status} />
@@ -145,7 +145,7 @@ export default async function OpsTripPage({ params }: PageProps) {
                     <div className={isLast ? "pb-0" : "pb-5"}>
                       <div className="flex flex-wrap items-baseline gap-x-2">
                         <p className="text-sm font-medium text-body">{stop.name}</p>
-                        <span className="tabular text-xs text-brand-bright">{stop.time}</span>
+                        <span className="tabular text-xs text-accent">{stop.time}</span>
                         {arrivedAt ? (
                           <Badge tone="brand">
                             called{" "}
@@ -254,7 +254,7 @@ export default async function OpsTripPage({ params }: PageProps) {
                         <input type="hidden" name="incidentId" value={incident.id} />
                         <button
                           type="submit"
-                          className="rounded-lg border border-edge px-3 py-1 text-xs text-muted transition-colors hover:border-brand/60 hover:text-brand-bright"
+                          className="rounded-lg border border-edge px-3 py-1 text-xs text-muted transition-colors hover:border-brand/60 hover:text-accent"
                         >
                           Resolve
                         </button>
@@ -283,7 +283,7 @@ export default async function OpsTripPage({ params }: PageProps) {
                       type="submit"
                       className={`tabular rounded-lg border px-3 py-1.5 text-xs transition-colors ${
                         trip.trip.delayMinutes === minutes
-                          ? "border-brand/60 bg-brand-soft text-brand-bright"
+                          ? "border-brand/60 bg-brand-soft text-accent"
                           : "border-edge text-muted hover:text-body"
                       }`}
                     >
@@ -334,7 +334,7 @@ export default async function OpsTripPage({ params }: PageProps) {
                 <input type="hidden" name="tripId" value={trip.trip.id} />
                 <button
                   type="submit"
-                  className="w-full rounded-xl border border-edge px-4 py-2.5 text-sm text-muted transition-colors hover:border-brand/60 hover:text-brand-bright"
+                  className="w-full rounded-xl border border-edge px-4 py-2.5 text-sm text-muted transition-colors hover:border-brand/60 hover:text-accent"
                 >
                   Put back on the board
                 </button>

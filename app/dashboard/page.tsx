@@ -74,7 +74,7 @@ export default async function DashboardPage() {
               <p className="tabular mt-1 text-3xl font-semibold text-body">
                 {nextTrip.boardTime}
               </p>
-              <p className="mt-1 text-sm text-brand-bright">
+              <p className="mt-1 text-sm text-accent">
                 {relativeMinutes(
                   (nextTrip.trip.departsAt.getTime() - now.getTime()) / 60000 +
                     (nextTrip.boardStop.adjustedMin ?? 0),
@@ -84,7 +84,7 @@ export default async function DashboardPage() {
 
             <div className="min-w-[14rem] flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="tabular text-sm font-medium text-brand-bright">
+                <span className="tabular text-sm font-medium text-accent">
                   {nextTrip.trip.route.code}
                 </span>
                 <span className="text-sm font-medium text-body">{nextTrip.trip.route.name}</span>
@@ -111,7 +111,7 @@ export default async function DashboardPage() {
             <div className="flex gap-2">
               <Link
                 href={`/track/${nextTrip.trip.trip.id}`}
-                className="rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-ink transition-colors hover:bg-brand-bright"
+                className="rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-on-brand transition-colors hover:bg-brand-hover"
               >
                 Track bus
               </Link>
@@ -163,7 +163,7 @@ export default async function DashboardPage() {
             action={
               <Link
                 href="/routes"
-                className="whitespace-nowrap text-xs text-muted transition-colors hover:text-brand-bright"
+                className="whitespace-nowrap text-xs text-muted transition-colors hover:text-accent"
               >
                 All routes →
               </Link>

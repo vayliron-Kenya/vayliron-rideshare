@@ -74,9 +74,10 @@ export function LiveMap({
           aria-label={`Live position on the line, ${stateLabel(data)}`}
         >
           <defs>
+            {/* The brand gradient from vayliron.com: primary into secondary. */}
             <linearGradient id="routeLine" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#16a97a" stopOpacity="0.85" />
-              <stop offset="100%" stopColor="#4c9bf5" stopOpacity="0.85" />
+              <stop offset="0%" stopColor="var(--color-brand-bright)" stopOpacity="0.95" />
+              <stop offset="100%" stopColor="var(--color-brand)" stopOpacity="0.95" />
             </linearGradient>
           </defs>
 
@@ -94,7 +95,7 @@ export function LiveMap({
           <polyline
             points={projected.travelled.map((p) => `${p.x},${p.y}`).join(" ")}
             fill="none"
-            stroke="#34d8a2"
+            stroke="var(--color-brand-bright)"
             strokeWidth="5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -114,8 +115,20 @@ export function LiveMap({
                   cx={point.x}
                   cy={point.y}
                   r={isHighlight ? 7 : isEnd ? 5.5 : 4}
-                  fill={isHighlight ? "#f0a83c" : passed ? "#24304190" : "#10161f"}
-                  stroke={isHighlight ? "#f0a83c" : passed ? "#34d8a2" : "#94a3b8"}
+                  fill={
+                    isHighlight
+                      ? "var(--color-amber)"
+                      : passed
+                        ? "var(--color-edge)"
+                        : "var(--color-surface)"
+                  }
+                  stroke={
+                    isHighlight
+                      ? "var(--color-amber)"
+                      : passed
+                        ? "var(--color-brand-bright)"
+                        : "var(--color-faint)"
+                  }
                   strokeWidth="2"
                 >
                   <title>{`${stop.name} — ${stop.time}`}</title>
@@ -127,7 +140,7 @@ export function LiveMap({
                       x={point.x}
                       y={point.y + (label.above ? -14 : 20)}
                       textAnchor="middle"
-                      fill={isHighlight ? "#f0a83c" : "#94a3b8"}
+                      fill={isHighlight ? "var(--color-amber)" : "var(--color-muted)"}
                       fontSize="11"
                       fontWeight={isHighlight || isEnd ? 600 : 400}
                     >
@@ -137,7 +150,7 @@ export function LiveMap({
                       x={point.x}
                       y={point.y + (label.above ? -3 : 31)}
                       textAnchor="middle"
-                      fill="#64748b"
+                      fill="var(--color-faint)"
                       fontSize="10"
                     >
                       {stop.time}
@@ -153,9 +166,14 @@ export function LiveMap({
             transform={`translate(${projected.bus.x} ${projected.bus.y})`}
             style={{ transition: "transform 900ms linear" }}
           >
-            <circle r="13" fill="#16a97a" opacity="0.22" />
-            <circle r="8" fill="#16a97a" stroke="#080b10" strokeWidth="2" />
-            <path d="M -3 -2 h 6 v 4 h -6 z" fill="#080b10" />
+            <circle r="13" fill="var(--color-brand)" opacity="0.22" />
+            <circle
+              r="8"
+              fill="var(--color-brand)"
+              stroke="var(--color-ink)"
+              strokeWidth="2"
+            />
+            <path d="M -3 -2 h 6 v 4 h -6 z" fill="var(--color-on-brand)" />
           </g>
         </svg>
       </div>
@@ -166,7 +184,7 @@ export function LiveMap({
           {data.nextStop ? (
             <>
               <p className="mt-1 text-lg font-semibold text-body">{data.nextStop.name}</p>
-              <p className="mt-0.5 text-sm text-brand-bright">
+              <p className="mt-0.5 text-sm text-accent">
                 {data.nextStop.etaMinutes <= 0
                   ? "Arriving now"
                   : `${data.nextStop.etaMinutes} min away · scheduled ${data.nextStop.time}`}
@@ -210,7 +228,7 @@ export function LiveMap({
                   <p className="tabular text-xs text-muted">{stop.time}</p>
                   <p
                     className={`tabular text-[11px] ${
-                      passed ? "text-edge" : "text-brand-bright"
+                      passed ? "text-edge" : "text-accent"
                     }`}
                   >
                     {passed ? "passed" : `${stop.etaMinutes} min`}

@@ -77,7 +77,7 @@ export function AuditList({
               {linkTrips && event.subjectKind === "trip" ? (
                 <Link
                   href={`/ops/trips/${event.subjectId}`}
-                  className="transition-colors hover:text-brand-bright"
+                  className="transition-colors hover:text-accent"
                 >
                   {event.subjectLabel}
                 </Link>

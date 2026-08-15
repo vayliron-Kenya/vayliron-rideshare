@@ -51,8 +51,8 @@ export function SpendChart({ points }: { points: SpendPoint[] }) {
           const y = PAD_T + usableH * (1 - fraction);
           return (
             <g key={fraction}>
-              <line x1={AXIS_W} y1={y} x2={W - PAD_R} y2={y} stroke="#24304160" strokeWidth="1" />
-              <text x={AXIS_W - 6} y={y + 3} textAnchor="end" fill="#64748b" fontSize="10">
+              <line x1={AXIS_W} y1={y} x2={W - PAD_R} y2={y} className="stroke-edge" strokeOpacity="0.6" strokeWidth="1" />
+              <text x={AXIS_W - 6} y={y + 3} textAnchor="end" className="fill-faint" fontSize="10">
                 {formatAxis(max * fraction)}
               </text>
             </g>
@@ -73,7 +73,7 @@ export function SpendChart({ points }: { points: SpendPoint[] }) {
                 width={barW}
                 height={height}
                 rx={Math.min(3, barW / 2)}
-                fill={isPeak ? "#34d8a2" : "#16a97a"}
+                className={isPeak ? "fill-brand-bright" : "fill-brand"}
                 opacity={isPeak ? 1 : 0.72}
               >
                 <title>
@@ -86,7 +86,7 @@ export function SpendChart({ points }: { points: SpendPoint[] }) {
                   x={x + barW / 2}
                   y={H - 8}
                   textAnchor="middle"
-                  fill="#64748b"
+                  className="fill-faint"
                   fontSize="10"
                 >
                   {point.date.slice(5)}

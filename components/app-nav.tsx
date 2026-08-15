@@ -65,7 +65,10 @@ export function AppNav(props: NavProps) {
       <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
         <Link href={links[0]?.href ?? "/"} className="flex shrink-0 items-center gap-2.5">
           <Mark />
-          <span className="text-sm font-semibold tracking-tight text-body">Vayliron</span>
+          <span className="flex items-baseline gap-1.5 whitespace-nowrap">
+            <span className="text-sm font-semibold tracking-tight text-body">Vayliron</span>
+            <span className="hidden text-sm text-muted lg:inline">Shared Transportation</span>
+          </span>
           {area ? (
             <span className="hidden rounded-md bg-raised px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted sm:inline">
               {area}
@@ -116,7 +119,7 @@ export function AppNav(props: NavProps) {
           ) : (
             <Link
               href="/"
-              className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-ink transition-colors hover:bg-brand-bright"
+              className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-on-brand transition-colors hover:bg-brand-hover"
             >
               Sign in
             </Link>
@@ -129,13 +132,21 @@ export function AppNav(props: NavProps) {
 
 function Mark() {
   return (
-    <svg viewBox="0 0 28 28" className="size-7" aria-hidden="true">
-      <rect x="1" y="1" width="26" height="26" rx="8" fill="#0f2a22" stroke="#16a97a" strokeWidth="1.2" />
-      <rect x="7" y="8" width="14" height="10" rx="2.5" fill="#16a97a" />
-      <rect x="8.6" y="9.6" width="4.6" height="3.6" rx="1" fill="#0f2a22" />
-      <rect x="14.8" y="9.6" width="4.6" height="3.6" rx="1" fill="#0f2a22" />
-      <circle cx="10.4" cy="20" r="1.9" fill="#34d8a2" />
-      <circle cx="17.6" cy="20" r="1.9" fill="#34d8a2" />
+    <svg viewBox="0 0 28 28" className="size-7 shrink-0" aria-hidden="true">
+      <rect
+        x="1"
+        y="1"
+        width="26"
+        height="26"
+        rx="8"
+        className="fill-brand-soft stroke-brand"
+        strokeWidth="1.2"
+      />
+      <rect x="7" y="8" width="14" height="10" rx="2.5" className="fill-brand" />
+      <rect x="8.6" y="9.6" width="4.6" height="3.6" rx="1" className="fill-brand-soft" />
+      <rect x="14.8" y="9.6" width="4.6" height="3.6" rx="1" className="fill-brand-soft" />
+      <circle cx="10.4" cy="20" r="1.9" className="fill-brand-bright" />
+      <circle cx="17.6" cy="20" r="1.9" className="fill-brand-bright" />
     </svg>
   );
 }

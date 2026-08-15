@@ -172,7 +172,7 @@ export default async function CompanyPeoplePage({ searchParams }: PageProps) {
             action={
               <a
                 href={showInactive ? "/company/people" : "/company/people?show=inactive"}
-                className="whitespace-nowrap text-xs text-muted transition-colors hover:text-brand-bright"
+                className="whitespace-nowrap text-xs text-muted transition-colors hover:text-accent"
               >
                 {showInactive ? "Hide deactivated" : "Show deactivated"}
               </a>

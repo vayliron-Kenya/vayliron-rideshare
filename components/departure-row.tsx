@@ -51,7 +51,7 @@ export function DepartureRow({
 
       <div className="min-w-[12rem] flex-1">
         <p className="text-sm font-medium text-body">
-          <span className="tabular text-brand-bright">{trip.route.code}</span>{" "}
+          <span className="tabular text-accent">{trip.route.code}</span>{" "}
           {trip.route.name}
         </p>
         <p className="mt-0.5 truncate text-xs text-faint">
@@ -76,21 +76,21 @@ export function DepartureRow({
         {alreadyBooked ? (
           <Link
             href="/bookings"
-            className="rounded-lg border border-brand/50 bg-brand-soft px-3 py-1.5 text-xs font-medium text-brand-bright transition-colors hover:bg-brand-soft/70"
+            className="rounded-lg border border-brand/50 bg-brand-soft px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-brand-soft/70"
           >
             Booked
           </Link>
         ) : trip.trip.status === "in_transit" ? (
           <Link
             href={`/track/${trip.trip.id}`}
-            className="rounded-lg border border-brand/50 px-3 py-1.5 text-xs font-medium text-brand-bright transition-colors hover:bg-brand-soft"
+            className="rounded-lg border border-brand/50 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-brand-soft"
           >
             Track
           </Link>
         ) : bookable ? (
           <Link
             href={bookHref}
-            className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-ink transition-colors hover:bg-brand-bright"
+            className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-on-brand transition-colors hover:bg-brand-hover"
           >
             Book
           </Link>

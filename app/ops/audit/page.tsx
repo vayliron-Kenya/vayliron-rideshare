@@ -96,7 +96,7 @@ export default async function OpsAuditPage({ searchParams }: PageProps) {
               href={href({ actor: option.value })}
               className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
                 (query.actor ?? "") === option.value
-                  ? "border-brand/60 bg-brand-soft text-brand-bright"
+                  ? "border-brand/60 bg-brand-soft text-accent"
                   : "border-edge text-muted hover:text-body"
               }`}
             >
@@ -111,7 +111,7 @@ export default async function OpsAuditPage({ searchParams }: PageProps) {
               href={href({ ns: "" })}
               className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
                 !ns
-                  ? "border-brand/60 bg-brand-soft text-brand-bright"
+                  ? "border-brand/60 bg-brand-soft text-accent"
                   : "border-edge text-muted hover:text-body"
               }`}
             >
@@ -123,7 +123,7 @@ export default async function OpsAuditPage({ searchParams }: PageProps) {
                 href={href({ ns: namespace })}
                 className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
                   ns === namespace
-                    ? "border-brand/60 bg-brand-soft text-brand-bright"
+                    ? "border-brand/60 bg-brand-soft text-accent"
                     : "border-edge text-muted hover:text-body"
                 }`}
               >

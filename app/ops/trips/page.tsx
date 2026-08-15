@@ -97,7 +97,7 @@ export default async function OpsTripsPage({ searchParams }: PageProps) {
               href={href({ date })}
               className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
                 date === serviceDate
-                  ? "border-brand/60 bg-brand-soft text-brand-bright"
+                  ? "border-brand/60 bg-brand-soft text-accent"
                   : "border-edge text-muted hover:text-body"
               }`}
             >
@@ -111,7 +111,7 @@ export default async function OpsTripsPage({ searchParams }: PageProps) {
             href={href({ route: "" })}
             className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
               !query.route
-                ? "border-brand/60 bg-brand-soft text-brand-bright"
+                ? "border-brand/60 bg-brand-soft text-accent"
                 : "border-edge text-muted hover:text-body"
             }`}
           >
@@ -123,7 +123,7 @@ export default async function OpsTripsPage({ searchParams }: PageProps) {
               href={href({ route: route.id })}
               className={`tabular rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
                 query.route === route.id
-                  ? "border-brand/60 bg-brand-soft text-brand-bright"
+                  ? "border-brand/60 bg-brand-soft text-accent"
                   : "border-edge text-muted hover:text-body"
               }`}
             >
@@ -139,7 +139,7 @@ export default async function OpsTripsPage({ searchParams }: PageProps) {
               href={href({ status: option.value })}
               className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
                 (query.status ?? "") === option.value
-                  ? "border-brand/60 bg-brand-soft text-brand-bright"
+                  ? "border-brand/60 bg-brand-soft text-accent"
                   : "border-edge text-muted hover:text-body"
               }`}
             >
@@ -157,7 +157,7 @@ export default async function OpsTripsPage({ searchParams }: PageProps) {
               href={href({ direction: option.value })}
               className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
                 (query.direction ?? "") === option.value
-                  ? "border-brand/60 bg-brand-soft text-brand-bright"
+                  ? "border-brand/60 bg-brand-soft text-accent"
                   : "border-edge text-muted hover:text-body"
               }`}
             >
@@ -195,7 +195,7 @@ export default async function OpsTripsPage({ searchParams }: PageProps) {
 
                 <div className="min-w-[13rem] flex-1">
                   <p className="text-sm text-body">
-                    <span className="tabular text-brand-bright">{trip.route.code}</span>{" "}
+                    <span className="tabular text-accent">{trip.route.code}</span>{" "}
                     {trip.timetable[0].name} → {trip.timetable[trip.timetable.length - 1].name}
                   </p>
                   <p className="mt-0.5 truncate text-xs text-faint">

@@ -76,7 +76,7 @@ export default async function DrivePage({ searchParams }: PageProps) {
             href={`/drive?date=${option}`}
             className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${
               option === serviceDate
-                ? "border-brand/60 bg-brand-soft text-brand-bright"
+                ? "border-brand/60 bg-brand-soft text-accent"
                 : "border-edge text-muted hover:text-body"
             }`}
           >
@@ -174,7 +174,7 @@ function RunRow({
 
         <div className="min-w-[11rem] flex-1">
           <p className="text-sm font-medium text-body">
-            <span className="tabular text-brand-bright">{trip.route.code}</span>{" "}
+            <span className="tabular text-accent">{trip.route.code}</span>{" "}
             {trip.route.name}
           </p>
           <p className="mt-0.5 truncate text-xs text-faint">

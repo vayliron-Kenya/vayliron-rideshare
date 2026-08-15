@@ -193,7 +193,7 @@ export default async function OpsFleetPage() {
                           className={`rounded-lg border px-3 py-1 text-xs transition-colors ${
                             driver.active
                               ? "border-edge text-muted hover:border-flame/60 hover:text-flame"
-                              : "border-brand/50 text-brand-bright hover:bg-brand-soft"
+                              : "border-brand/50 text-accent hover:bg-brand-soft"
                           }`}
                         >
                           {driver.active ? "Stand down" : "Reinstate"}

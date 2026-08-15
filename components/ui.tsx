@@ -4,7 +4,7 @@ type Tone = "neutral" | "brand" | "amber" | "flame" | "sky";
 
 const TONE_CLASSES: Record<Tone, string> = {
   neutral: "bg-raised text-muted ring-edge",
-  brand: "bg-brand-soft text-brand-bright ring-brand/40",
+  brand: "bg-brand-soft text-accent ring-brand/40",
   amber: "bg-amber-soft text-amber ring-amber/40",
   flame: "bg-flame-soft text-flame ring-flame/40",
   sky: "bg-sky-soft text-sky ring-sky/40",
@@ -77,7 +77,7 @@ export function Stat({
 }) {
   const accent =
     tone === "brand"
-      ? "text-brand-bright"
+      ? "text-accent"
       : tone === "amber"
         ? "text-amber"
         : tone === "flame"
@@ -126,11 +126,12 @@ export function Meter({
   // by stylesheet order, not by the order they appear in the attribute, so
   // "w-full w-24" would silently render full width.
   const width = /(^|\s)(w-|max-w-|flex-1)/.test(className) ? "" : "w-full";
+  // Meter fills carry no text, so they use Vayliron's raw status colours.
   const fill =
     tone === "flame"
-      ? "bg-flame"
+      ? "bg-flame-vivid"
       : tone === "amber"
-        ? "bg-amber"
+        ? "bg-amber-vivid"
         : tone === "sky"
           ? "bg-sky"
           : "bg-brand";

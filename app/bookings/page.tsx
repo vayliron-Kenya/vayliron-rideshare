@@ -58,7 +58,7 @@ export default async function BookingsPage({ searchParams }: PageProps) {
           action={
             <Link
               href="/dashboard"
-              className="whitespace-nowrap text-xs text-muted transition-colors hover:text-brand-bright"
+              className="whitespace-nowrap text-xs text-muted transition-colors hover:text-accent"
             >
               Book another →
             </Link>
@@ -72,7 +72,7 @@ export default async function BookingsPage({ searchParams }: PageProps) {
               action={
                 <Link
                   href="/dashboard"
-                  className="inline-flex rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-ink"
+                  className="inline-flex rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-on-brand"
                 >
                   Find a departure
                 </Link>
@@ -119,7 +119,7 @@ export default async function BookingsPage({ searchParams }: PageProps) {
                       <span className="tabular ml-2 text-xs text-faint">{boardTime}</span>
                     </td>
                     <td className="whitespace-nowrap px-5 py-3">
-                      <span className="tabular text-brand-bright">{trip.route.code}</span>
+                      <span className="tabular text-accent">{trip.route.code}</span>
                     </td>
                     <td className="px-5 py-3 text-xs">
                       {boardStop.name} → {alightStop.name}
@@ -170,7 +170,7 @@ function UpcomingRow({ view, highlighted }: { view: BookingView; highlighted: bo
 
       <div className="min-w-[14rem] flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="tabular text-sm font-medium text-brand-bright">{trip.route.code}</span>
+          <span className="tabular text-sm font-medium text-accent">{trip.route.code}</span>
           <span className="text-sm font-medium text-body">{trip.route.name}</span>
           <DirectionBadge direction={trip.trip.direction} />
           <BookingStatusBadge status={booking.status} />
@@ -196,11 +196,11 @@ function UpcomingRow({ view, highlighted }: { view: BookingView; highlighted: bo
       </div>
 
       <div className="flex flex-col items-end gap-2">
-        <p className="text-xs text-brand-bright">{relativeMinutes(minutesToBoard)}</p>
+        <p className="text-xs text-accent">{relativeMinutes(minutesToBoard)}</p>
         <div className="flex gap-2">
           <Link
             href={`/track/${trip.trip.id}`}
-            className="rounded-lg border border-brand/50 px-3 py-1.5 text-xs font-medium text-brand-bright transition-colors hover:bg-brand-soft"
+            className="rounded-lg border border-brand/50 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-brand-soft"
           >
             Track
           </Link>

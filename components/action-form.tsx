@@ -8,8 +8,8 @@ import type { FormState } from "@/app/actions";
 type Tone = "brand" | "flame" | "quiet";
 
 const TONES: Record<Tone, string> = {
-  brand: "bg-brand text-ink hover:bg-brand-bright",
-  flame: "bg-flame text-ink hover:bg-flame/85",
+  brand: "bg-brand text-on-brand hover:bg-brand-hover",
+  flame: "bg-flame text-on-brand hover:bg-flame/85",
   quiet: "border border-edge text-muted hover:text-body",
 };
 
@@ -95,7 +95,7 @@ export function ActionForm({
         <p
           data-form-result="ok"
           role="status"
-          className="mt-3 rounded-lg bg-brand-soft px-3 py-2 text-xs leading-relaxed text-brand-bright"
+          className="mt-3 rounded-lg bg-brand-soft px-3 py-2 text-xs leading-relaxed text-accent"
         >
           {state.message}
         </p>
@@ -231,7 +231,7 @@ export function CheckField({
         type="checkbox"
         name={name}
         defaultChecked={defaultChecked}
-        className="size-4 rounded border-edge bg-ink accent-[#16a97a]"
+        className="size-4 rounded border-edge bg-ink accent-[var(--color-brand)]"
       />
       {label}
     </label>

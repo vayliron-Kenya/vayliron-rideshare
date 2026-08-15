@@ -7,15 +7,19 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Vayliron — corporate bus line for Nairobi",
-    template: "%s · Vayliron",
+    default: "Vayliron Shared Transportation — corporate bus line for Nairobi",
+    template: "%s · Vayliron Shared Transportation",
   },
   description:
     "Scheduled staff shuttles across Nairobi: book a seat, track the bus, and give HR a live view of spend and utilisation.",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#080b10",
+  // Vayliron's brand purple, so the mobile browser chrome matches the app.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0022" },
+  ],
 };
 
 export default async function RootLayout({
@@ -35,7 +39,8 @@ export default async function RootLayout({
         />
         <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-6 sm:px-6">{children}</main>
         <footer className="border-t border-line px-4 py-8 text-center text-xs text-faint sm:px-6">
-          Vayliron Mobility Ltd · Upper Hill, Nairobi · All times East Africa Time (UTC+3)
+          Vayliron Shared Transportation · Vayliron Mobility Ltd, Upper Hill, Nairobi · All times
+          East Africa Time (UTC+3)
         </footer>
       </body>
     </html>

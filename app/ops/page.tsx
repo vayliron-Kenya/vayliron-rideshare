@@ -128,7 +128,7 @@ export default async function OpsBoardPage() {
                       <>
                         <Link
                           href={`/ops/trips/${incident.tripId}`}
-                          className="text-brand-bright transition-colors hover:underline"
+                          className="text-accent transition-colors hover:underline"
                         >
                           {trip.route.code} {trip.trip.departTime}
                         </Link>{" "}
@@ -144,7 +144,7 @@ export default async function OpsBoardPage() {
                   <input type="hidden" name="incidentId" value={incident.id} />
                   <button
                     type="submit"
-                    className="rounded-lg border border-edge px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/60 hover:text-brand-bright"
+                    className="rounded-lg border border-edge px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/60 hover:text-accent"
                   >
                     Mark resolved
                   </button>
@@ -190,7 +190,7 @@ export default async function OpsBoardPage() {
 
                 <div className="min-w-[12rem] flex-1">
                   <p className="text-sm font-medium text-body">
-                    <span className="tabular text-brand-bright">{trip.route.code}</span>{" "}
+                    <span className="tabular text-accent">{trip.route.code}</span>{" "}
                     {trip.route.name}
                   </p>
                   <p className="mt-0.5 text-xs text-faint">
@@ -238,9 +238,9 @@ export default async function OpsBoardPage() {
                   <td className="whitespace-nowrap px-5 py-3">
                     <Link
                       href={`/ops/trips?route=${line.routeId}`}
-                      className="transition-colors hover:text-brand-bright"
+                      className="transition-colors hover:text-accent"
                     >
-                      <span className="tabular text-brand-bright">{line.code}</span>{" "}
+                      <span className="tabular text-accent">{line.code}</span>{" "}
                       <span className="text-body">{line.name}</span>
                     </Link>
                   </td>
@@ -293,7 +293,7 @@ export default async function OpsBoardPage() {
                 <span className="tabular w-14 shrink-0 font-medium text-body">
                   {trip.trip.departTime}
                 </span>
-                <span className="tabular w-14 shrink-0 text-brand-bright">{trip.route.code}</span>
+                <span className="tabular w-14 shrink-0 text-accent">{trip.route.code}</span>
                 <span className="min-w-[10rem] flex-1 truncate text-muted">
                   {trip.timetable[0].name} → {trip.timetable[trip.timetable.length - 1].name}
                 </span>

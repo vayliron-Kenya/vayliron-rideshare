@@ -153,7 +153,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
 
           <Card className="p-5">
             <h2 className="text-sm font-semibold text-body">Emissions avoided</h2>
-            <p className="tabular mt-2 text-2xl font-semibold text-brand-bright">
+            <p className="tabular mt-2 text-2xl font-semibold text-accent">
               {metrics.co2SavedKg.toLocaleString("en-KE")} kg CO₂e
             </p>
             <p className="mt-1 text-xs leading-relaxed text-muted">
@@ -191,9 +191,9 @@ export default async function AdminPage({ searchParams }: PageProps) {
                     <td className="whitespace-nowrap px-5 py-3">
                       <Link
                         href={`/routes/${row.route.slug}`}
-                        className="transition-colors hover:text-brand-bright"
+                        className="transition-colors hover:text-accent"
                       >
-                        <span className="tabular text-brand-bright">{row.route.code}</span>{" "}
+                        <span className="tabular text-accent">{row.route.code}</span>{" "}
                         <span className="text-body">{row.route.name}</span>
                       </Link>
                     </td>

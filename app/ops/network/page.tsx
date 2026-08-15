@@ -66,9 +66,9 @@ export default async function OpsNetworkPage() {
                   <td className="whitespace-nowrap px-5 py-3">
                     <Link
                       href={`/routes/${route.slug}`}
-                      className="transition-colors hover:text-brand-bright"
+                      className="transition-colors hover:text-accent"
                     >
-                      <span className="tabular text-brand-bright">{route.code}</span>{" "}
+                      <span className="tabular text-accent">{route.code}</span>{" "}
                       <span className="text-body">{route.name}</span>
                     </Link>
                   </td>
@@ -86,7 +86,7 @@ export default async function OpsNetworkPage() {
                         className={`rounded-lg border px-3 py-1 text-xs transition-colors ${
                           route.active
                             ? "border-edge text-muted hover:border-flame/60 hover:text-flame"
-                            : "border-brand/50 text-brand-bright hover:bg-brand-soft"
+                            : "border-brand/50 text-accent hover:bg-brand-soft"
                         }`}
                       >
                         {route.active ? "Suspend" : "Resume"}

@@ -779,7 +779,7 @@ for (const trip of trips.filter((t) => t.status === "in_transit")) {
 const count = (table: string) =>
   (conn.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
 
-console.log(`Seeded Vayliron at ${DB_PATH}`);
+console.log(`Seeded Vayliron Shared Transportation at ${DB_PATH}`);
 console.log(`  service window   ${serviceDates[0]} → ${serviceDates[serviceDates.length - 1]} (${serviceDates.length} service days)`);
 console.log(`  stops            ${count("stops")}`);
 console.log(`  routes           ${count("routes")}`);
