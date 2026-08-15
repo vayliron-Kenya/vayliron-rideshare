@@ -5,15 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { getSession, signIn, signOut } from "@/lib/auth";
-import {
-  boardByPassCode,
-  BookingError,
-  cancelBooking,
-  closeTrip,
-  createBooking,
-  getBooking,
-  getTrip,
-} from "@/lib/queries";
+import { BookingError, cancelBooking, createBooking, getBooking } from "@/lib/queries";
 
 /* ------------------------------------------------------------------ *
  * Session
@@ -28,12 +20,13 @@ const emailSchema = z.string().trim().min(3).max(160).email();
 
 export async function signInAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const parsed = emailSchema.safeParse(formData.get("email"));
-  if (!parsed.success) return { error: "Enter a valid work email address." };
+  if (!parsed.success) return { error: "Enter a valid email address." };
 
   const result = await signIn(parsed.data);
   if (!result.ok) return { error: result.error };
 
-  redirect("/dashboard");
+  // Riders, drivers and controllers each land somewhere different.
+  redirect(result.redirectTo);
 }
 
 export async function signOutAction(): Promise<void> {
@@ -56,14 +49,12 @@ export async function bookSeatAction(_prev: FormState, formData: FormData): Prom
   const session = await getSession();
   if (!session) return { error: "Your session expired. Sign in again to book." };
 
-  const raw = {
+  const parsed = bookingSchema.safeParse({
     tripId: formData.get("tripId"),
     boardStopId: formData.get("boardStopId"),
     alightStopId: formData.get("alightStopId"),
     seatNo: formData.get("seatNo") || undefined,
-  };
-
-  const parsed = bookingSchema.safeParse(raw);
+  });
   if (!parsed.success) return { error: "That booking request was incomplete. Try again." };
 
   let bookingId: string;
@@ -96,49 +87,4 @@ export async function cancelBookingAction(formData: FormData): Promise<void> {
 
   revalidatePath("/bookings");
   revalidatePath("/dashboard");
-}
-
-/* ------------------------------------------------------------------ *
- * Driver / conductor
- * ------------------------------------------------------------------ */
-
-export async function boardPassAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await getSession();
-  if (!session) return { error: "Sign in to run the door." };
-
-  const tripId = String(formData.get("tripId") ?? "");
-  const passCode = String(formData.get("passCode") ?? "").trim();
-  if (!tripId || !passCode) return { error: "Enter a boarding pass code." };
-
-  const trip = getTrip(tripId);
-  if (!trip) return { error: "That departure no longer exists." };
-
-  const result = boardByPassCode(tripId, passCode);
-  revalidatePath(`/driver/${tripId}`);
-
-  if (result.ok) {
-    return {
-      message: `Seat ${result.entry.booking.seatNo} · ${result.entry.employee.name} (${result.entry.companyName}) — boarded at ${result.entry.boardStop.name}.`,
-    };
-  }
-
-  switch (result.reason) {
-    case "already_boarded":
-      return { error: "That pass has already been scanned on this bus." };
-    case "wrong_trip":
-      return { error: "That pass is for a different departure." };
-    default:
-      return { error: "No booking matches that code." };
-  }
-}
-
-export async function closeTripAction(formData: FormData): Promise<void> {
-  const session = await getSession();
-  if (!session) redirect("/");
-
-  const tripId = String(formData.get("tripId") ?? "");
-  if (tripId) closeTrip(tripId);
-
-  revalidatePath(`/driver/${tripId}`);
-  revalidatePath("/driver");
 }

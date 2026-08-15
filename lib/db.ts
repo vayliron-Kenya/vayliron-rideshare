@@ -30,6 +30,7 @@ export function db(): Database.Database {
   conn.pragma("journal_mode = WAL");
   conn.pragma("foreign_keys = ON");
   conn.exec(readSchema());
+  migrate(conn);
 
   instance = conn;
   (globalThis as { __vayliron_db?: Database.Database }).__vayliron_db = conn;
@@ -38,6 +39,30 @@ export function db(): Database.Database {
 
 export function readSchema(): string {
   return fs.readFileSync(path.join(process.cwd(), "lib", "schema.sql"), "utf8");
+}
+
+/**
+ * Columns added after the first release.
+ *
+ * `CREATE TABLE IF NOT EXISTS` silently leaves an older table alone, so a
+ * database seeded before these columns existed would keep working right up
+ * until something selected one. Adding them here keeps an existing local
+ * database usable without a reseed.
+ */
+const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
+  { table: "drivers", column: "email", definition: "TEXT" },
+  { table: "drivers", column: "active", definition: "INTEGER NOT NULL DEFAULT 1" },
+  { table: "trips", column: "delay_minutes", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "trips", column: "cancel_reason", definition: "TEXT" },
+];
+
+function migrate(conn: Database.Database): void {
+  for (const { table, column, definition } of ADDED_COLUMNS) {
+    const columns = conn.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (columns.length === 0) continue;
+    if (columns.some((c) => c.name === column)) continue;
+    conn.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 /** Wraps a unit of work in a transaction. Rolls back if the callback throws. */

@@ -15,6 +15,8 @@ import type {
   Direction,
   Driver,
   Employee,
+  Incident,
+  Operator,
   Route,
   RouteStop,
   Stop,
@@ -65,6 +67,8 @@ const toTrip = (r: Row): Trip => ({
   driverId: r.driver_id as string,
   capacity: r.capacity as number,
   status: r.status as Trip["status"],
+  delayMinutes: (r.delay_minutes as number) ?? 0,
+  cancelReason: (r.cancel_reason as string) ?? null,
 });
 
 const toBooking = (r: Row): Booking => ({
@@ -122,6 +126,29 @@ const toDriver = (r: Row): Driver => ({
   phone: r.phone as string,
   psvLicence: r.psv_licence as string,
   ratingBps: r.rating_bps as number,
+  email: (r.email as string) ?? null,
+  active: (r.active as number) ?? 1,
+});
+
+const toOperator = (r: Row): Operator => ({
+  id: r.id as string,
+  name: r.name as string,
+  email: r.email as string,
+  phone: r.phone as string,
+  role: r.role as Operator["role"],
+  active: r.active as number,
+});
+
+const toIncident = (r: Row): Incident => ({
+  id: r.id as string,
+  tripId: r.trip_id as string,
+  reporterKind: r.reporter_kind as Incident["reporterKind"],
+  reporterId: r.reporter_id as string,
+  kind: r.kind as Incident["kind"],
+  note: r.note as string,
+  delayMinutes: r.delay_minutes as number,
+  createdAt: r.created_at as string,
+  resolvedAt: (r.resolved_at as string) ?? null,
 });
 
 /* ------------------------------------------------------------------ *
@@ -239,10 +266,12 @@ function hydrateTrip(row: Row): TripSummary {
     phone: row.driver_phone,
     psv_licence: row.psv_licence,
     rating_bps: row.rating_bps,
+    email: row.driver_email,
+    active: row.driver_active,
   });
 
   const stops = getDirectionalStops(trip.routeId, trip.direction);
-  const timetable = buildTimetable(stops, trip.departTime);
+  const timetable = buildTimetable(stops, trip.departTime, trip.delayMinutes);
   const departsAt = nairobiInstant(trip.serviceDate, trip.departTime);
   const last = timetable[timetable.length - 1];
   const seatsBooked = Number(row.seats_booked ?? 0);
@@ -267,6 +296,7 @@ const TRIP_SELECT = `
          r.corridor AS route_corridor, r.blurb AS route_blurb,
          v.plate, v.model, v.capacity AS vehicle_capacity, v.wifi, v.usb_ports, v.operator,
          d.name AS driver_name, d.phone AS driver_phone, d.psv_licence, d.rating_bps,
+         d.email AS driver_email, d.active AS driver_active,
          (SELECT COUNT(*) FROM bookings b
            WHERE b.trip_id = t.id AND b.status IN ('booked','boarded')) AS seats_booked
     FROM trips t
@@ -286,10 +316,15 @@ export interface TripFilter {
   routeId?: string;
   /** Only departures that call at this stop. */
   stopId?: string;
+  status?: Trip["status"];
+  /** Operations views need to see cancelled departures; rider views do not. */
+  includeCancelled?: boolean;
+  driverId?: string;
 }
 
 export function listTrips(filter: TripFilter): TripSummary[] {
-  const clauses = ["t.service_date = ?", "t.status != 'cancelled'"];
+  const clauses = ["t.service_date = ?"];
+  if (!filter.includeCancelled) clauses.push("t.status != 'cancelled'");
   const params: unknown[] = [filter.serviceDate];
 
   if (filter.direction) {
@@ -305,6 +340,14 @@ export function listTrips(filter: TripFilter): TripSummary[] {
       "EXISTS (SELECT 1 FROM route_stops rs WHERE rs.route_id = t.route_id AND rs.stop_id = ?)",
     );
     params.push(filter.stopId);
+  }
+  if (filter.status) {
+    clauses.push("t.status = ?");
+    params.push(filter.status);
+  }
+  if (filter.driverId) {
+    clauses.push("t.driver_id = ?");
+    params.push(filter.driverId);
   }
 
   return db()

@@ -3,23 +3,30 @@ import { redirect } from "next/navigation";
 
 import { SignInForm } from "@/components/sign-in-form";
 import { Badge, Card } from "@/components/ui";
-import { getSession } from "@/lib/auth";
-import { EMPLOYEES } from "@/lib/data/nairobi";
+import { getPrincipal, homePath } from "@/lib/auth";
+import { EMPLOYEES, OPERATORS } from "@/lib/data/nairobi";
 import { FARE_BANDS, formatKes } from "@/lib/domain/fares";
 import { nextServiceDate, SATURDAY_TIMETABLE, TIMETABLE } from "@/lib/domain/schedule";
 import { formatServiceDate, nairobiDate } from "@/lib/domain/time";
+import { listDriverLogins } from "@/lib/ops";
 import { listRoutes, listStops } from "@/lib/queries";
 
 export default async function LandingPage() {
-  if (await getSession()) redirect("/dashboard");
+  const principal = await getPrincipal();
+  if (principal) redirect(homePath(principal));
 
   const routes = listRoutes();
   const stops = listStops();
   const today = nairobiDate();
   const serviceDate = nextServiceDate(today);
 
-  const suggestions = EMPLOYEES.map((e) => e.email);
   const admins = EMPLOYEES.filter((e) => e.role === "admin");
+  const drivers = listDriverLogins(2);
+  const suggestions = [
+    ...OPERATORS.map((o) => o.email),
+    ...EMPLOYEES.map((e) => e.email),
+    ...drivers.map((d) => d.email),
+  ];
 
   return (
     <div className="space-y-14 pt-6">
@@ -65,7 +72,7 @@ export default async function LandingPage() {
         </div>
 
         <Card className="p-6">
-          <h2 className="text-sm font-semibold text-body">Staff sign in</h2>
+          <h2 className="text-sm font-semibold text-body">Sign in</h2>
           <p className="mt-1 text-xs text-faint">
             Next service day: {formatServiceDate(serviceDate)}
             {serviceDate !== today ? " · no service today" : ""}
@@ -75,22 +82,37 @@ export default async function LandingPage() {
             <SignInForm suggestions={suggestions} />
           </div>
 
+          <p className="mt-3 text-xs leading-relaxed text-faint">
+            One email, four apps. Where you land depends on who you are — a controller sees the
+            network, a driver sees their runs, an HR admin sees their company, a commuter sees
+            their seat.
+          </p>
+
           <div className="mt-6 border-t border-line pt-4">
             <p className="text-xs font-medium uppercase tracking-wider text-faint">Demo accounts</p>
-            <ul className="mt-2 space-y-1.5">
-              {admins.map((admin) => (
-                <li key={admin.email} className="text-xs">
-                  <span className="font-mono text-brand-bright">{admin.email}</span>
-                  <span className="text-faint"> — HR admin</span>
-                </li>
-              ))}
-              <li className="text-xs">
-                <span className="font-mono text-brand-bright">{EMPLOYEES[1].email}</span>
-                <span className="text-faint"> — rider</span>
-              </li>
-            </ul>
-            <p className="mt-3 text-[11px] leading-relaxed text-faint">
-              This demo signs you in on the work email alone — no password, no SSO. Swap
+            <dl className="mt-3 space-y-3">
+              <AccountGroup
+                title="Vayliron control"
+                rows={OPERATORS.map((o) => ({
+                  email: o.email,
+                  note: o.role === "superadmin" ? "network admin" : "controller",
+                }))}
+              />
+              <AccountGroup
+                title="Client control panel"
+                rows={admins.map((a) => ({ email: a.email, note: "HR admin" }))}
+              />
+              <AccountGroup
+                title="Driver app"
+                rows={drivers.map((d) => ({ email: d.email, note: d.name }))}
+              />
+              <AccountGroup
+                title="Rider app"
+                rows={[{ email: EMPLOYEES[1].email, note: EMPLOYEES[1].name }]}
+              />
+            </dl>
+            <p className="mt-4 text-[11px] leading-relaxed text-faint">
+              This demo signs you in on the email alone — no password, no SSO. Swap
               <span className="font-mono"> lib/auth.ts </span> for your identity provider before
               real staff data goes anywhere near it.
             </p>
@@ -98,26 +120,33 @@ export default async function LandingPage() {
         </Card>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        {[
-          {
-            title: "Reserve a numbered seat",
-            body: "Pick your stage and your departure. Seats are held per person per departure, so nobody stands and nobody doubles up.",
-          },
-          {
-            title: "Watch it approach",
-            body: "Every running bus reports its position against the timetable, with a live ETA for your stage and a peak-traffic factor baked in.",
-          },
-          {
-            title: "Bill it correctly",
-            body: "Each leg is priced on a distance band, then split between employer and employee to the shilling — including monthly per-staff caps.",
-          },
-        ].map((item) => (
-          <Card key={item.title} className="p-5">
-            <h3 className="text-sm font-semibold text-body">{item.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-muted">{item.body}</p>
-          </Card>
-        ))}
+      <section>
+        <h2 className="text-sm font-semibold text-body">Four apps, one network</h2>
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            {
+              title: "Rider",
+              body: "Reserve a numbered seat on your own commute, watch the bus approach your stage, and board with a six-character pass.",
+            },
+            {
+              title: "Driver",
+              body: "Your runs for the day, the manifest by stage, pass-code check-in, and one tap to report the traffic that is holding you up.",
+            },
+            {
+              title: "Client control panel",
+              body: "HR manages staff and the subsidy policy; finance pulls the monthly invoice with a payroll deduction line per rider.",
+            },
+            {
+              title: "Vayliron control",
+              body: "The live network board — load, revenue, delays and incidents — with the power to reassign, delay or cancel any departure.",
+            },
+          ].map((item) => (
+            <Card key={item.title} className="p-5">
+              <h3 className="text-sm font-semibold text-body">{item.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">{item.body}</p>
+            </Card>
+          ))}
+        </div>
       </section>
 
       <section>
@@ -136,6 +165,27 @@ export default async function LandingPage() {
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+
+function AccountGroup({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: { email: string; note: string }[];
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <dt className="text-[11px] uppercase tracking-wider text-faint">{title}</dt>
+      {rows.map((row) => (
+        <dd key={row.email} className="mt-1 text-xs">
+          <span className="font-mono text-brand-bright">{row.email}</span>
+          <span className="text-faint"> — {row.note}</span>
+        </dd>
+      ))}
     </div>
   );
 }

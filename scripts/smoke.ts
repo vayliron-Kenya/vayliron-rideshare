@@ -1,26 +1,42 @@
 /**
  * End-to-end smoke test against a running server.
  *
+ *   npm run db:reset
  *   npm run build && npm start &
  *   npm run smoke
  *
  * Drives the flows that server actions own — signing in, reserving a seat,
- * checking a rider in at the door — because those never run during `vitest`.
- * Screenshots land in `.smoke/` for a quick visual check.
+ * delaying a run from control, checking a rider in at the door — because none
+ * of those run under `vitest`. Screenshots land in `.smoke/`.
  */
 import fs from "node:fs";
 import path from "node:path";
 
-import { chromium } from "playwright";
+import { chromium, type Page } from "playwright";
 
 const BASE = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
 const SHOTS = path.join(process.cwd(), ".smoke");
+
+const RIDER = "wanjiku.karanja@tandaza.co.ke"; // also an HR admin
+const CONTROLLER = "naliaka.wekesa@vayliron.co.ke"; // network admin
 
 const checks: { name: string; ok: boolean; detail?: string }[] = [];
 
 function check(name: string, ok: boolean, detail?: string) {
   checks.push({ name, ok, detail });
   console.log(`${ok ? "  ok  " : " FAIL "} ${name}${detail ? ` — ${detail}` : ""}`);
+}
+
+async function signIn(page: Page, email: string, expectPath: string) {
+  await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+  if (!page.url().endsWith("/")) {
+    // Already signed in as somebody else.
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.waitForURL(`${BASE}/`, { timeout: 15000 });
+  }
+  await page.fill("#email", email);
+  await page.click('button[type="submit"]');
+  await page.waitForURL(`**${expectPath}`, { timeout: 15000 });
 }
 
 async function main() {
@@ -31,23 +47,20 @@ async function main() {
   });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 
-  // --- Sign in ------------------------------------------------------------
+  /* ---------------------------------------------------------------- *
+   * Rider
+   * ---------------------------------------------------------------- */
+
   await page.goto(BASE, { waitUntil: "networkidle" });
   await page.screenshot({ path: path.join(SHOTS, "01-landing.png"), fullPage: true });
   check("landing page renders", await page.getByText("Thika Road Express").first().isVisible());
 
-  await page.fill("#email", "wanjiku.karanja@tandaza.co.ke");
-  await page.click('button[type="submit"]');
-  await page.waitForURL("**/dashboard", { timeout: 15000 });
-  check("work email signs the rider in", page.url().includes("/dashboard"));
+  await signIn(page, RIDER, "/dashboard");
+  check("a rider email opens the rider app", page.url().includes("/dashboard"));
   await page.screenshot({ path: path.join(SHOTS, "02-dashboard.png"), fullPage: true });
 
-  // --- Book a seat --------------------------------------------------------
   // `exact` matters: without it this also matches the "Booked" state link.
   const bookLink = () => page.getByRole("link", { name: "Book", exact: true }).first();
-
-  // Re-running without reseeding eventually books out this rider's own
-  // commute, so fall back to the wider network rather than calling it a failure.
   const onDashboard = (await bookLink().count()) > 0;
   if (!onDashboard) {
     await page.goto(`${BASE}/routes/mombasa-road-express`, { waitUntil: "networkidle" });
@@ -58,72 +71,162 @@ async function main() {
     hasDeparture,
     onDashboard ? "from the rider's own commute" : "from the routes page",
   );
+  if (!hasDeparture) throw new Error("nothing bookable — reseed with `npm run db:reset`");
 
-  if (hasDeparture) {
-    await bookLink().click();
-    await page.waitForURL("**/book/**", { timeout: 15000 });
-    await page.waitForSelector("#board");
+  await bookLink().click();
+  await page.waitForURL("**/book/**", { timeout: 15000 });
+  await page.waitForSelector("#board");
+  check("fare quote is shown before booking", await page.getByText(/You pay/).first().isVisible());
+  await page.screenshot({ path: path.join(SHOTS, "03-booking.png"), fullPage: true });
 
-    const fareBefore = await page.getByText(/You pay/).first().isVisible();
-    check("fare quote is shown before booking", fareBefore);
-    await page.screenshot({ path: path.join(SHOTS, "03-booking.png"), fullPage: true });
+  const freeSeat = page.locator('button[aria-label^="Seat "]').first();
+  const seatLabel = await freeSeat.getAttribute("aria-label");
+  await freeSeat.click();
+  await page.getByRole("button", { name: /Confirm seat/ }).click();
+  await page.waitForURL("**/bookings**", { timeout: 15000 });
+  check("confirming a seat lands on the rider's trips", page.url().includes("/bookings"), seatLabel ?? "");
 
-    // Pick an explicit seat rather than taking the auto-assigned one.
-    const freeSeat = page.locator('button[aria-label^="Seat "]').first();
-    const seatLabel = await freeSeat.getAttribute("aria-label");
-    await freeSeat.click();
+  const bookingId = new URL(page.url()).searchParams.get("highlight") ?? "";
+  const row = page.locator(`[data-booking-id="${bookingId}"]`);
+  const passCode = ((await row.getAttribute("data-pass-code")) ?? "").trim();
+  const tripId = (await row.getAttribute("data-trip-id")) ?? "";
+  check(
+    "a boarding pass code was issued",
+    /^[2-9BCDFGHJKLMNPQRSTVWXYZ]{6}$/.test(passCode),
+    passCode,
+  );
+  await page.screenshot({ path: path.join(SHOTS, "04-bookings.png"), fullPage: true });
 
-    await page.getByRole("button", { name: /Confirm seat/ }).click();
-    await page.waitForURL("**/bookings**", { timeout: 15000 });
-    check("confirming a seat lands on the rider's trips", page.url().includes("/bookings"), seatLabel ?? "");
+  await row.getByRole("link", { name: "Track" }).click();
+  await page.waitForURL("**/track/**", { timeout: 15000 });
+  check("live map renders the corridor", (await page.locator("svg polyline").count()) > 0);
+  await page.screenshot({ path: path.join(SHOTS, "05-tracking.png"), fullPage: true });
 
-    // Work from the booking that was just created, not whichever row sorts first.
-    const bookingId = new URL(page.url()).searchParams.get("highlight") ?? "";
-    const row = page.locator(`[data-booking-id="${bookingId}"]`);
-    const passCode = ((await row.getAttribute("data-pass-code")) ?? "").trim();
-    const tripId = (await row.getAttribute("data-trip-id")) ?? "";
+  /* ---------------------------------------------------------------- *
+   * Client control panel — the same person, wearing their HR hat
+   * ---------------------------------------------------------------- */
 
-    check(
-      "a boarding pass code was issued",
-      /^[2-9BCDFGHJKLMNPQRSTVWXYZ]{6}$/.test(passCode),
-      passCode,
-    );
-    await page.screenshot({ path: path.join(SHOTS, "04-bookings.png"), fullPage: true });
+  await page.goto(`${BASE}/company`, { waitUntil: "networkidle" });
+  check("client panel reports employer spend", await page.getByText("Employer spend").first().isVisible());
+  await page.screenshot({ path: path.join(SHOTS, "06-company.png"), fullPage: true });
 
-    // --- Track it ---------------------------------------------------------
-    await row.getByRole("link", { name: "Track" }).click();
-    await page.waitForURL("**/track/**", { timeout: 15000 });
-    check("live map renders the corridor", (await page.locator("svg polyline").count()) > 0);
-    await page.screenshot({ path: path.join(SHOTS, "05-tracking.png"), fullPage: true });
+  await page.goto(`${BASE}/company/people`, { waitUntil: "networkidle" });
+  const stamp = Date.now().toString().slice(-6);
+  await page.fill('input[name="name"]', "Smoke Testworker");
+  await page.fill('input[name="email"]', `smoke.${stamp}@tandaza.co.ke`);
+  await page.fill('input[name="phone"]', "+254712345678");
+  await page.fill('input[name="staffNo"]', `SM-${stamp}`);
+  await page.getByRole("button", { name: "Add to account" }).click();
+  await page.waitForSelector("[data-form-result]", { timeout: 15000 });
+  const addResult = await page.locator("[data-form-result]").first().innerText();
+  check("HR can add a rider to the account", addResult.includes("can now sign in"), addResult.trim());
+  await page.screenshot({ path: path.join(SHOTS, "07-company-people.png"), fullPage: true });
 
-    // --- Check the rider in at the door -----------------------------------
-    if (tripId && passCode) {
-      await page.goto(`${BASE}/driver/${tripId}`, { waitUntil: "networkidle" });
-      await page.fill("#passCode", passCode);
-      await page.getByRole("button", { name: "Board" }).click();
-      // Scoped to the form's own banner: Next.js renders an empty role="alert"
-      // route announcer on every page, which would otherwise match first.
-      await page.waitForSelector("[data-board-result]", { timeout: 15000 });
-      const banner = await page.locator("[data-board-result]").first().innerText();
-      check("the door accepts the pass code", banner.includes("boarded at"), banner.trim());
-      await page.screenshot({ path: path.join(SHOTS, "06-door.png"), fullPage: true });
+  await page.goto(`${BASE}/company/people`, { waitUntil: "networkidle" });
+  await page.fill('input[name="email"]', `outsider.${stamp}@gmail.com`);
+  await page.fill('input[name="name"]', "Wrong Domain");
+  await page.fill('input[name="phone"]', "+254712345678");
+  await page.fill('input[name="staffNo"]', `SM-${stamp}b`);
+  await page.getByRole("button", { name: "Add to account" }).click();
+  await page.waitForSelector('[data-form-result="error"]', { timeout: 15000 });
+  const domainError = await page.locator('[data-form-result="error"]').first().innerText();
+  check(
+    "an off-domain work email is refused",
+    domainError.includes("tandaza.co.ke"),
+    domainError.trim(),
+  );
 
-      // The same pass must not work twice.
-      await page.fill("#passCode", passCode);
-      await page.getByRole("button", { name: "Board" }).click();
-      await page.waitForSelector('[data-board-result="error"]', { timeout: 15000 });
-      const second = await page.locator('[data-board-result="error"]').first().innerText();
-      check("the same pass is refused a second time", second.includes("already been scanned"), second.trim());
-    }
+  await page.goto(`${BASE}/company/invoices`, { waitUntil: "networkidle" });
+  check("invoice renders with a total", await page.getByText("Amount due").first().isVisible());
+  await page.screenshot({ path: path.join(SHOTS, "08-company-invoice.png"), fullPage: true });
+
+  /* ---------------------------------------------------------------- *
+   * Vayliron control
+   * ---------------------------------------------------------------- */
+
+  await signIn(page, CONTROLLER, "/ops");
+  check("a Vayliron email opens the operations board", page.url().includes("/ops"));
+  await page.screenshot({ path: path.join(SHOTS, "09-ops-board.png"), fullPage: true });
+
+  await page.goto(`${BASE}/ops/trips/${tripId}`, { waitUntil: "networkidle" });
+  check("control sees the manifest for the rider's departure", await page.getByText("Manifest").first().isVisible());
+
+  // Delay the run by 10 minutes and confirm the rider is told.
+  await page.getByRole("button", { name: "+10", exact: true }).click();
+  const delayed = await page
+    .getByText("running 10 min late")
+    .first()
+    .waitFor({ timeout: 15000 })
+    .then(() => true)
+    .catch(() => false);
+  check("control can put a run behind schedule", delayed);
+  await page.screenshot({ path: path.join(SHOTS, "10-ops-trip.png"), fullPage: true });
+
+  await page.goto(`${BASE}/ops/fleet`, { waitUntil: "networkidle" });
+  check("fleet and roster render", await page.getByText("Fleet & roster").first().isVisible());
+  await page.screenshot({ path: path.join(SHOTS, "11-ops-fleet.png"), fullPage: true });
+
+  await page.goto(`${BASE}/ops/clients`, { waitUntil: "networkidle" });
+  check("client revenue renders", await page.getByText("Fare revenue").first().isVisible());
+  await page.screenshot({ path: path.join(SHOTS, "12-ops-clients.png"), fullPage: true });
+
+  /* ---------------------------------------------------------------- *
+   * The door — control covering it, then the driver's own view
+   * ---------------------------------------------------------------- */
+
+  await page.goto(`${BASE}/drive/${tripId}`, { waitUntil: "networkidle" });
+  await page.fill("#passCode", passCode);
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  // Scoped to the form's own banner: Next.js renders an empty role="alert"
+  // route announcer on every page, which would otherwise match first.
+  await page.waitForSelector("[data-board-result]", { timeout: 15000 });
+  const banner = await page.locator("[data-board-result]").first().innerText();
+  check("the door accepts the pass code", banner.includes("boarded at"), banner.trim());
+  await page.screenshot({ path: path.join(SHOTS, "13-door.png"), fullPage: true });
+
+  await page.fill("#passCode", passCode);
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await page.waitForSelector('[data-board-result="error"]', { timeout: 15000 });
+  const second = await page.locator('[data-board-result="error"]').first().innerText();
+  check("the same pass is refused a second time", second.includes("already been scanned"), second.trim());
+
+  // Call a stage, which is how a run reports its own progress.
+  const arrived = page.getByRole("button", { name: "Arrived" }).first();
+  if ((await arrived.count()) > 0) {
+    await arrived.click();
+    const called = await page
+      .getByText(/called \d{2}:\d{2}/)
+      .first()
+      .waitFor({ timeout: 15000 })
+      .then(() => true)
+      .catch(() => false);
+    check("calling a stage records the arrival", called);
   }
 
-  // --- Admin --------------------------------------------------------------
-  await page.goto(`${BASE}/admin`, { waitUntil: "networkidle" });
-  check("HR dashboard renders spend", await page.getByText("Employer spend").first().isVisible());
-  await page.screenshot({ path: path.join(SHOTS, "07-admin.png"), fullPage: true });
+  /* ---------------------------------------------------------------- *
+   * Back to the rider: did the delay reach them?
+   * ---------------------------------------------------------------- */
 
-  await page.goto(`${BASE}/routes`, { waitUntil: "networkidle" });
-  await page.screenshot({ path: path.join(SHOTS, "08-routes.png"), fullPage: true });
+  await signIn(page, RIDER, "/dashboard");
+  await page.goto(`${BASE}/bookings`, { waitUntil: "networkidle" });
+  const riderSeesDelay = await page
+    .locator(`[data-booking-id="${bookingId}"]`)
+    .getByText(/min late/)
+    .count();
+  check("the rider is told their bus is running late", riderSeesDelay > 0);
+  await page.screenshot({ path: path.join(SHOTS, "14-rider-delay.png"), fullPage: true });
+
+  /* ---------------------------------------------------------------- *
+   * Driver app
+   * ---------------------------------------------------------------- */
+
+  const driverEmail = process.env.SMOKE_DRIVER_EMAIL ?? "peter.mwangi@vayliron.co.ke";
+  await signIn(page, driverEmail, "/drive");
+  check("a driver email opens the driver app", page.url().includes("/drive"));
+  await page.setViewportSize({ width: 430, height: 932 });
+  await page.reload({ waitUntil: "networkidle" });
+  check("driver app fits a phone", (await page.locator("body").boundingBox())!.width <= 430);
+  await page.screenshot({ path: path.join(SHOTS, "15-driver-phone.png"), fullPage: true });
 
   await browser.close();
 

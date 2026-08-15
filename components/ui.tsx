@@ -122,6 +122,10 @@ export function Meter({
   className?: string;
 }) {
   const clamped = Math.max(0, Math.min(100, pct));
+  // A caller-supplied width has to win. Tailwind resolves competing utilities
+  // by stylesheet order, not by the order they appear in the attribute, so
+  // "w-full w-24" would silently render full width.
+  const width = /(^|\s)(w-|max-w-|flex-1)/.test(className) ? "" : "w-full";
   const fill =
     tone === "flame"
       ? "bg-flame"
@@ -133,7 +137,7 @@ export function Meter({
 
   return (
     <div
-      className={`h-1.5 w-full overflow-hidden rounded-full bg-raised ${className}`}
+      className={`h-1.5 overflow-hidden rounded-full bg-raised ${width} ${className}`}
       role="meter"
       aria-valuenow={Math.round(clamped)}
       aria-valuemin={0}

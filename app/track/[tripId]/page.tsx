@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { LiveMap } from "@/components/live-map";
 import { Badge, Card, DirectionBadge, TripStatusBadge } from "@/components/ui";
-import { getSession } from "@/lib/auth";
+import { getPrincipal, getSession } from "@/lib/auth";
 import { formatServiceDate } from "@/lib/domain/time";
 import { buildPositionPayload } from "@/lib/position";
 import { getTrip, listBookingsForEmployee } from "@/lib/queries";
@@ -20,17 +20,21 @@ export async function generateMetadata({ params }: PageProps) {
 }
 
 export default async function TrackPage({ params }: PageProps) {
+  // Riders track their own bus; drivers and control watch any of them.
+  const principal = await getPrincipal();
+  if (!principal) redirect("/");
   const session = await getSession();
-  if (!session) redirect("/");
 
   const { tripId } = await params;
   const trip = getTrip(tripId);
   const payload = buildPositionPayload(tripId);
   if (!trip || !payload) notFound();
 
-  const myBooking = listBookingsForEmployee(session.employee.id, {}).find(
-    (b) => b.booking.tripId === tripId && b.booking.status !== "cancelled",
-  );
+  const myBooking = session
+    ? listBookingsForEmployee(session.employee.id, {}).find(
+        (b) => b.booking.tripId === tripId && b.booking.status !== "cancelled",
+      )
+    : undefined;
 
   return (
     <div className="space-y-6">
@@ -50,7 +54,22 @@ export default async function TrackPage({ params }: PageProps) {
           <DirectionBadge direction={trip.trip.direction} />
           <TripStatusBadge status={trip.trip.status} />
           <Badge>{trip.vehicle.plate}</Badge>
+          {trip.trip.delayMinutes > 0 ? (
+            <Badge tone="flame">{trip.trip.delayMinutes} min late</Badge>
+          ) : null}
         </div>
+
+        {trip.trip.status === "cancelled" ? (
+          <p className="mt-3 rounded-xl bg-flame-soft px-4 py-3 text-sm text-flame">
+            This departure was cancelled{trip.trip.cancelReason ? ` — ${trip.trip.cancelReason}` : ""}.
+            Your seat has been released, so book another departure on this line.
+          </p>
+        ) : trip.trip.delayMinutes > 0 ? (
+          <p className="mt-3 rounded-xl bg-amber-soft px-4 py-3 text-sm text-amber">
+            The driver has reported this run {trip.trip.delayMinutes} minutes behind. Every arrival
+            time below already includes it.
+          </p>
+        ) : null}
 
         <p className="mt-2 text-sm text-muted">
           {formatServiceDate(trip.trip.serviceDate)} · departs {trip.trip.departTime} ·{" "}

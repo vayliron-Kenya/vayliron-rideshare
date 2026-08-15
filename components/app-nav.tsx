@@ -4,43 +4,81 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { signOutAction } from "@/app/actions";
-import type { Company, Employee } from "@/lib/types";
 
-interface NavSession {
-  employee: Employee;
-  company: Company;
+export interface NavProps {
+  kind: "employee" | "driver" | "operator" | null;
+  name: string;
+  org: string;
+  /** Company admins get the client control panel; controllers get the ops one. */
+  isCompanyAdmin: boolean;
+  isNetworkAdmin: boolean;
 }
 
-const LINKS = [
-  { href: "/dashboard", label: "Today" },
-  { href: "/routes", label: "Routes" },
-  { href: "/bookings", label: "My trips" },
-];
+interface NavLink {
+  href: string;
+  label: string;
+}
 
-export function AppNav({ session }: { session: NavSession | null }) {
+function linksFor(props: NavProps): NavLink[] {
+  if (props.kind === "operator") {
+    const links: NavLink[] = [
+      { href: "/ops", label: "Board" },
+      { href: "/ops/trips", label: "Departures" },
+      { href: "/ops/fleet", label: "Fleet" },
+      { href: "/ops/clients", label: "Clients" },
+    ];
+    if (props.isNetworkAdmin) links.push({ href: "/ops/network", label: "Network" });
+    return links;
+  }
+
+  if (props.kind === "driver") {
+    return [{ href: "/drive", label: "My runs" }];
+  }
+
+  if (props.kind === "employee") {
+    const links: NavLink[] = [
+      { href: "/dashboard", label: "Today" },
+      { href: "/routes", label: "Routes" },
+      { href: "/bookings", label: "My trips" },
+    ];
+    if (props.isCompanyAdmin) links.push({ href: "/company", label: "Company" });
+    return links;
+  }
+
+  return [];
+}
+
+const AREA_LABEL: Record<string, string> = {
+  operator: "Control",
+  driver: "Driver",
+  employee: "",
+};
+
+export function AppNav(props: NavProps) {
   const pathname = usePathname();
-
-  const links = [...LINKS];
-  if (session?.employee.role === "admin") {
-    links.push({ href: "/admin", label: "Company" });
-  }
-  if (session) {
-    links.push({ href: "/driver", label: "Door" });
-  }
+  const links = linksFor(props);
+  const area = props.kind ? AREA_LABEL[props.kind] : "";
 
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-ink/85 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
-        <Link href={session ? "/dashboard" : "/"} className="flex items-center gap-2.5">
+        <Link href={links[0]?.href ?? "/"} className="flex shrink-0 items-center gap-2.5">
           <Mark />
           <span className="text-sm font-semibold tracking-tight text-body">Vayliron</span>
+          {area ? (
+            <span className="hidden rounded-md bg-raised px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted sm:inline">
+              {area}
+            </span>
+          ) : null}
         </Link>
 
-        {session ? (
-          <nav className="ml-2 flex min-w-0 items-center gap-0.5 overflow-x-auto">
+        {links.length > 0 ? (
+          <nav className="ml-1 flex min-w-0 items-center gap-0.5 overflow-x-auto">
             {links.map((link) => {
+              // "/ops" would otherwise light up for every page beneath it.
               const active =
-                pathname === link.href || pathname.startsWith(`${link.href}/`);
+                pathname === link.href ||
+                (link.href !== "/ops" && pathname.startsWith(`${link.href}/`));
               return (
                 <Link
                   key={link.href}
@@ -58,12 +96,12 @@ export function AppNav({ session }: { session: NavSession | null }) {
           </nav>
         ) : null}
 
-        <div className="ml-auto flex items-center gap-3">
-          {session ? (
+        <div className="ml-auto flex shrink-0 items-center gap-3">
+          {props.kind ? (
             <>
               <div className="hidden text-right sm:block">
-                <p className="text-xs font-medium text-body">{session.employee.name}</p>
-                <p className="text-[11px] text-faint">{session.company.name}</p>
+                <p className="text-xs font-medium text-body">{props.name}</p>
+                <p className="text-[11px] text-faint">{props.org}</p>
               </div>
               <form action={signOutAction}>
                 <button
@@ -79,7 +117,7 @@ export function AppNav({ session }: { session: NavSession | null }) {
               href="/"
               className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-ink transition-colors hover:bg-brand-bright"
             >
-              Staff sign in
+              Sign in
             </Link>
           )}
         </div>

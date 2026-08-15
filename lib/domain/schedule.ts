@@ -105,16 +105,25 @@ export interface TimetableEntry extends RouteStop {
   time: string;
 }
 
-/** Expands a departure into a stop-by-stop timetable. */
+/**
+ * Expands a departure into a stop-by-stop timetable.
+ *
+ * `delayMinutes` is whatever control or the driver has reported this run to be
+ * running behind. It shifts every stage including the first, because a bus
+ * that left its terminus twelve minutes late is twelve minutes late at every
+ * stage after it — riders further down the line need that, not the plan.
+ */
 export function buildTimetable(
   stopsInOrder: readonly RouteStop[],
   departTime: string,
+  delayMinutes = 0,
 ): TimetableEntry[] {
   const factor = peakFactor(departTime);
   const departMinutes = parseHhmm(departTime);
+  const delay = Math.max(0, Math.round(delayMinutes));
 
   return stopsInOrder.map((stop) => {
-    const adjustedMin = Math.round(stop.minFromStart * factor);
+    const adjustedMin = Math.round(stop.minFromStart * factor) + delay;
     return {
       ...stop,
       adjustedMin,
@@ -127,8 +136,9 @@ export function buildTimetable(
 export function tripDurationMinutes(
   stopsInOrder: readonly RouteStop[],
   departTime: string,
+  delayMinutes = 0,
 ): number {
-  const timetable = buildTimetable(stopsInOrder, departTime);
+  const timetable = buildTimetable(stopsInOrder, departTime, delayMinutes);
   return timetable[timetable.length - 1]?.adjustedMin ?? 0;
 }
 

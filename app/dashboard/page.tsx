@@ -6,7 +6,7 @@ import { Card, CardHeader, DirectionBadge, EmptyState, Stat } from "@/components
 import { getSession } from "@/lib/auth";
 import { fareForKm, formatKes } from "@/lib/domain/fares";
 import { nextServiceDate } from "@/lib/domain/schedule";
-import { formatServiceDate, nairobiDate, relativeMinutes } from "@/lib/domain/time";
+import { addDays, formatServiceDate, nairobiDate, relativeMinutes } from "@/lib/domain/time";
 import {
   commuteMatches,
   listBookingsForEmployee,
@@ -47,9 +47,11 @@ export default async function DashboardPage() {
       : `${company.name} covers ${company.subsidyBps / 100}% of every fare`;
 
   // Suggested departures on the commute this person actually makes.
-  const suggestions = employee.homeStopId && employee.workStopId
-    ? buildSuggestions(employee.homeStopId, employee.workStopId, serviceDate, now)
-    : [];
+  const suggested =
+    employee.homeStopId && employee.workStopId
+      ? nextDeparturesFor(employee.homeStopId, employee.workStopId, serviceDate, now)
+      : { serviceDate, suggestions: [] };
+  const suggestions = suggested.suggestions;
 
   const bookedTripIds = new Set(upcoming.map((b) => b.booking.tripId));
 
@@ -152,7 +154,7 @@ export default async function DashboardPage() {
       <section>
         <Card>
           <CardHeader
-            title={`Your commute · ${formatServiceDate(serviceDate)}`}
+            title={`Your commute · ${formatServiceDate(suggested.serviceDate)}`}
             subtitle={
               employee.homeStopId && employee.workStopId
                 ? "Departures that serve both your home stage and your workplace"
@@ -201,6 +203,31 @@ interface Suggestion {
   alightStopId: string;
   km: number;
   direction: Direction;
+}
+
+/**
+ * Rolls forward until there is actually something to catch.
+ *
+ * By late afternoon every remaining departure on the day has gone, and showing
+ * a commuter an empty list when Monday's bus is sitting right there is simply
+ * wrong. Looks up to a week ahead, which covers a Sunday and a public holiday
+ * back to back.
+ */
+function nextDeparturesFor(
+  homeStopId: string,
+  workStopId: string,
+  from: string,
+  now: Date,
+): { serviceDate: string; suggestions: Suggestion[] } {
+  let serviceDate = from;
+
+  for (let attempt = 0; attempt < 7; attempt += 1) {
+    const suggestions = buildSuggestions(homeStopId, workStopId, serviceDate, now);
+    if (suggestions.length > 0) return { serviceDate, suggestions };
+    serviceDate = nextServiceDate(addDays(serviceDate, 1));
+  }
+
+  return { serviceDate: from, suggestions: [] };
 }
 
 /**

@@ -63,7 +63,26 @@ CREATE TABLE IF NOT EXISTS drivers (
   name       TEXT NOT NULL,
   phone      TEXT NOT NULL,
   psv_licence TEXT NOT NULL UNIQUE,         -- NTSA PSV badge number
-  rating_bps INTEGER NOT NULL DEFAULT 5000  -- 0..5000, i.e. 4.7 stars = 4700
+  rating_bps INTEGER NOT NULL DEFAULT 5000, -- 0..5000, i.e. 4.7 stars = 4700
+  -- Drivers sign in to the driver app in their own right, so they carry
+  -- credentials rather than existing only as a name on a manifest.
+  email      TEXT UNIQUE,
+  active     INTEGER NOT NULL DEFAULT 1
+);
+
+-- Vayliron's own staff: the people who run the network, as distinct from the
+-- client companies who buy seats on it.
+CREATE TABLE IF NOT EXISTS operators (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  email      TEXT NOT NULL UNIQUE,
+  phone      TEXT NOT NULL,
+  -- controller: runs the daily board. superadmin: also edits the network,
+  -- the fleet and client contracts.
+  role       TEXT NOT NULL DEFAULT 'controller'
+             CHECK (role IN ('controller', 'superadmin')),
+  active     INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS employees (
@@ -93,6 +112,10 @@ CREATE TABLE IF NOT EXISTS trips (
   capacity     INTEGER NOT NULL CHECK (capacity > 0),
   status       TEXT NOT NULL DEFAULT 'scheduled'
                CHECK (status IN ('scheduled','boarding','in_transit','completed','cancelled')),
+  -- Minutes this departure is running behind, set by the driver or by control.
+  -- Every downstream arrival time and rider ETA shifts by it.
+  delay_minutes INTEGER NOT NULL DEFAULT 0,
+  cancel_reason TEXT,
   UNIQUE (route_id, direction, service_date, depart_time)
 );
 
@@ -138,3 +161,31 @@ CREATE TABLE IF NOT EXISTS vehicle_pings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pings_trip ON vehicle_pings(trip_id, recorded_at DESC);
+
+-- Actual arrival times, marked off by the driver as the run progresses. Where
+-- one exists it beats the estimate: a stage that has been called is a fact,
+-- not a prediction.
+CREATE TABLE IF NOT EXISTS trip_stop_events (
+  trip_id    TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  stop_id    TEXT NOT NULL REFERENCES stops(id),
+  arrived_at TEXT NOT NULL,
+  PRIMARY KEY (trip_id, stop_id)
+);
+
+-- Anything that goes wrong on a run. Raised from the driver app or by control,
+-- and cleared from the operations board.
+CREATE TABLE IF NOT EXISTS incidents (
+  id            TEXT PRIMARY KEY,
+  trip_id       TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  reporter_kind TEXT NOT NULL CHECK (reporter_kind IN ('driver', 'operator')),
+  reporter_id   TEXT NOT NULL,
+  kind          TEXT NOT NULL
+                CHECK (kind IN ('traffic','breakdown','accident','security','weather','other')),
+  note          TEXT NOT NULL,
+  delay_minutes INTEGER NOT NULL DEFAULT 0 CHECK (delay_minutes >= 0),
+  created_at    TEXT NOT NULL,
+  resolved_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_incidents_trip ON incidents(trip_id);
+CREATE INDEX IF NOT EXISTS idx_incidents_open ON incidents(created_at DESC) WHERE resolved_at IS NULL;

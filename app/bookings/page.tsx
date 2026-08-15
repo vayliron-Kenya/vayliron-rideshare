@@ -2,7 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { cancelBookingAction } from "@/app/actions";
-import { BookingStatusBadge, Card, CardHeader, DirectionBadge, EmptyState } from "@/components/ui";
+import {
+  Badge,
+  BookingStatusBadge,
+  Card,
+  CardHeader,
+  DirectionBadge,
+  EmptyState,
+} from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import { formatKes } from "@/lib/domain/fares";
 import { formatServiceDate, nairobiDate, relativeMinutes } from "@/lib/domain/time";
@@ -167,6 +174,9 @@ function UpcomingRow({ view, highlighted }: { view: BookingView; highlighted: bo
           <span className="text-sm font-medium text-body">{trip.route.name}</span>
           <DirectionBadge direction={trip.trip.direction} />
           <BookingStatusBadge status={booking.status} />
+          {trip.trip.delayMinutes > 0 ? (
+            <Badge tone="flame">{trip.trip.delayMinutes} min late</Badge>
+          ) : null}
         </div>
         <p className="mt-1.5 text-sm text-muted">
           {boardStop.name} <span className="text-edge">→</span> {alightStop.name}

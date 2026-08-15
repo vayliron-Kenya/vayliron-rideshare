@@ -3,7 +3,8 @@
 import { useActionState, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 
-import { boardPassAction, type FormState } from "@/app/actions";
+import type { FormState } from "@/app/actions";
+import { boardPassAction } from "@/app/drive-actions";
 
 function ScanButton() {
   const { pending } = useFormStatus();

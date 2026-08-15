@@ -54,6 +54,20 @@ export interface Driver {
   phone: string;
   psvLicence: string;
   ratingBps: number;
+  email: string | null;
+  active: number;
+}
+
+export type OperatorRole = "controller" | "superadmin";
+
+/** Vayliron's own staff, as opposed to a client company's staff. */
+export interface Operator {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: OperatorRole;
+  active: number;
 }
 
 export interface Company {
@@ -89,6 +103,28 @@ export interface Trip {
   driverId: string;
   capacity: number;
   status: TripStatus;
+  delayMinutes: number;
+  cancelReason: string | null;
+}
+
+export type IncidentKind =
+  | "traffic"
+  | "breakdown"
+  | "accident"
+  | "security"
+  | "weather"
+  | "other";
+
+export interface Incident {
+  id: string;
+  tripId: string;
+  reporterKind: "driver" | "operator";
+  reporterId: string;
+  kind: IncidentKind;
+  note: string;
+  delayMinutes: number;
+  createdAt: string;
+  resolvedAt: string | null;
 }
 
 export interface Booking {

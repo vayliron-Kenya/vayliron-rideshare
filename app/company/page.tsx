@@ -1,16 +1,17 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { CompanyTabs } from "@/components/company-tabs";
 import { SpendChart } from "@/components/spend-chart";
 import { Card, CardHeader, EmptyState, Meter, Stat } from "@/components/ui";
-import { getSession } from "@/lib/auth";
+import { getCompanyAdmin } from "@/lib/auth";
 import { formatKes } from "@/lib/domain/fares";
 import { addDays, formatServiceDate, nairobiDate } from "@/lib/domain/time";
 import { companyMetrics, dailySpend, riderSpend, routeUsage } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Company" };
+export const metadata = { title: "Company overview" };
 
 const RANGES = [
   { key: "7", label: "7 days" },
@@ -23,13 +24,12 @@ interface PageProps {
 }
 
 export default async function AdminPage({ searchParams }: PageProps) {
-  const session = await getSession();
-  if (!session) redirect("/");
-  if (session.employee.role !== "admin") {
+  const session = await getCompanyAdmin();
+  if (!session) {
     return (
       <EmptyState
         title="Admins only"
-        body="This view is limited to the HR and finance admins on your company account. Ask your Vayliron account owner if you need access."
+        body="The company control panel is limited to the HR and finance admins on your account. Ask your Vayliron account owner if you need access."
       />
     );
   }
@@ -58,6 +58,8 @@ export default async function AdminPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
+      <CompanyTabs active="overview" />
+
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-wider text-faint">{company.name}</p>
@@ -74,7 +76,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
           {RANGES.map((option) => (
             <Link
               key={option.key}
-              href={`/admin?range=${option.key}`}
+              href={`/company?range=${option.key}`}
               className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${
                 String(days) === option.key
                   ? "bg-raised font-medium text-body"

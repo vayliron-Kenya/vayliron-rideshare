@@ -15,6 +15,7 @@ import {
   buildFleet,
   COMPANIES,
   EMPLOYEES,
+  OPERATORS,
   ROUTES,
   STOPS,
   type EmployeeSeed,
@@ -100,6 +101,8 @@ conn.exec(fs.readFileSync(path.join(process.cwd(), "lib", "schema.sql"), "utf8")
 
 // Order matters: children before parents.
 for (const table of [
+  "incidents",
+  "trip_stop_events",
   "vehicle_pings",
   "bookings",
   "trips",
@@ -110,6 +113,7 @@ for (const table of [
   "stops",
   "vehicles",
   "drivers",
+  "operators",
 ]) {
   conn.prepare(`DELETE FROM ${table}`).run();
 }
@@ -191,11 +195,37 @@ fleet.forEach((v, i) => {
 });
 
 const insertDriver = conn.prepare(
-  "INSERT INTO drivers (id, name, phone, psv_licence, rating_bps) VALUES (?, ?, ?, ?, ?)",
+  `INSERT INTO drivers (id, name, phone, psv_licence, rating_bps, email, active)
+   VALUES (?, ?, ?, ?, ?, ?, 1)`,
 );
+const driverEmails = new Set<string>();
 roster.forEach((d, i) => {
-  insertDriver.run(`drv_${String(i + 1).padStart(3, "0")}`, d.name, d.phone, d.psvLicence, d.ratingBps);
+  // Drivers sign in to the driver app, so each one needs a unique work email.
+  const base = d.name.toLowerCase().replace(/[^a-z]+/g, ".");
+  let email = `${base}@vayliron.co.ke`;
+  let suffix = 1;
+  while (driverEmails.has(email)) {
+    suffix += 1;
+    email = `${base}${suffix}@vayliron.co.ke`;
+  }
+  driverEmails.add(email);
+
+  insertDriver.run(
+    `drv_${String(i + 1).padStart(3, "0")}`,
+    d.name,
+    d.phone,
+    d.psvLicence,
+    d.ratingBps,
+    email,
+  );
 });
+
+const insertOperator = conn.prepare(
+  "INSERT INTO operators (id, name, email, phone, role, active, created_at) VALUES (?,?,?,?,?,1,?)",
+);
+for (const op of OPERATORS) {
+  insertOperator.run(op.id, op.name, op.email, op.phone, op.role, nowIso);
+}
 
 const insertCompany = conn.prepare(
   `INSERT INTO companies (id, name, email_domain, billing_email, kra_pin, subsidy_bps, monthly_cap_kes, created_at)
@@ -609,6 +639,79 @@ for (const trip of trips.filter((t) => t.status === "in_transit")) {
   pings += 1;
 }
 
+/* -------------------------------------------------------------- *
+ * Disruption, so the operations board has something to run
+ * -------------------------------------------------------------- */
+
+const insertIncident = conn.prepare(
+  `INSERT INTO incidents
+     (id, trip_id, reporter_kind, reporter_id, kind, note, delay_minutes, created_at, resolved_at)
+   VALUES (?,?,?,?,?,?,?,?,?)`,
+);
+const setDelay = conn.prepare("UPDATE trips SET delay_minutes = ? WHERE id = ?");
+
+const INCIDENT_SCRIPT: { kind: string; note: string; delay: number }[] = [
+  { kind: "traffic", note: "Standstill at Githurai flyover, three lanes merging", delay: 20 },
+  { kind: "breakdown", note: "Matatu broken down across the service lane at Kangemi", delay: 15 },
+  { kind: "weather", note: "Heavy rain on Ngong Road, crawling past Dagoretti Corner", delay: 12 },
+  { kind: "traffic", note: "Diversion at Nyayo roundabout for roadworks", delay: 10 },
+  { kind: "other", note: "Held at the Gigiri gate for security screening", delay: 8 },
+  { kind: "accident", note: "Collision blocking the Mombasa Road underpass", delay: 30 },
+];
+
+let incidentCount = 0;
+
+// Things go wrong on runs that have already happened as well as on live ones,
+// so the board has history to show even outside the peaks. A run that has
+// finished always has its incident closed — control does not leave yesterday's
+// jam sitting open.
+const recentDates = new Set(serviceDates.filter((d) => d <= today).slice(-4));
+const disruptable = trips.filter((t) => recentDates.has(t.serviceDate) && t.status !== "cancelled");
+
+// Roughly one run in twelve hits something.
+for (const [index, trip] of disruptable.entries()) {
+  if (!chance(0.06)) continue;
+  const script = INCIDENT_SCRIPT[index % INCIDENT_SCRIPT.length];
+  const resolved = trip.status === "completed" ? true : chance(0.35);
+
+  incidentCount += 1;
+  insertIncident.run(
+    `inc_${String(incidentCount).padStart(4, "0")}`,
+    trip.id,
+    "driver",
+    `drv_${String((index % fleetSize) + 1).padStart(3, "0")}`,
+    script.kind,
+    script.note,
+    script.delay,
+    nairobiInstant(trip.serviceDate, trip.departTime).toISOString(),
+    resolved ? nowIso : null,
+  );
+  // A finished run keeps the delay it actually ran with; a live one is told to
+  // control so riders further down the line see it.
+  setDelay.run(script.delay, trip.id);
+}
+
+// Stage arrivals for anything already rolling, so the board is not blank.
+const insertArrival = conn.prepare(
+  `INSERT INTO trip_stop_events (trip_id, stop_id, arrived_at) VALUES (?,?,?)
+   ON CONFLICT (trip_id, stop_id) DO NOTHING`,
+);
+let arrivalCount = 0;
+for (const trip of trips.filter((t) => t.status === "in_transit")) {
+  const departsAt = nairobiInstant(trip.serviceDate, trip.departTime);
+  const elapsed = (now.getTime() - departsAt.getTime()) / 60000;
+  for (const stop of trip.stops) {
+    const scheduled = stop.minFromStart * 1.6;
+    if (scheduled > elapsed) break;
+    insertArrival.run(
+      trip.id,
+      stop.id,
+      new Date(departsAt.getTime() + scheduled * 60000).toISOString(),
+    );
+    arrivalCount += 1;
+  }
+}
+
 /* -------------------------------------------------------------- */
 
 const count = (table: string) =>
@@ -624,11 +727,32 @@ console.log(`  employees        ${count("employees")}`);
 console.log(`  trips            ${count("trips")}`);
 console.log(`  bookings         ${bookingCount}`);
 console.log(`  live pings       ${pings}`);
+console.log(`  incidents        ${incidentCount}`);
+console.log(`  stage arrivals   ${arrivalCount}`);
+console.log(`  operators        ${count("operators")}`);
 console.log("");
-console.log("Sign in with any seeded work email, for example:");
-for (const e of EMPLOYEES.filter((e) => e.role === "admin")) {
-  console.log(`  ${e.email.padEnd(42)} (${e.name}, HR admin)`);
+console.log("Sign in with any of these — one email, four different apps:");
+console.log("");
+console.log("  Vayliron control panel");
+for (const op of OPERATORS) {
+  const role = op.role === "superadmin" ? "network admin" : "controller";
+  console.log(`    ${op.email.padEnd(40)} (${op.name}, ${role})`);
 }
-console.log(`  ${EMPLOYEES[1].email.padEnd(42)} (${EMPLOYEES[1].name}, rider)`);
+console.log("");
+console.log("  Client control panel");
+for (const e of EMPLOYEES.filter((e) => e.role === "admin")) {
+  console.log(`    ${e.email.padEnd(40)} (${e.name}, HR admin)`);
+}
+console.log("");
+console.log("  Driver app");
+const firstDriver = conn
+  .prepare("SELECT name, email FROM drivers WHERE email IS NOT NULL ORDER BY id LIMIT 2")
+  .all() as { name: string; email: string }[];
+for (const d of firstDriver) {
+  console.log(`    ${d.email.padEnd(40)} (${d.name})`);
+}
+console.log("");
+console.log("  Rider app");
+console.log(`    ${EMPLOYEES[1].email.padEnd(40)} (${EMPLOYEES[1].name})`);
 
 conn.close();
