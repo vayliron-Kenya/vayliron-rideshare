@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "db:seed": "tsx scripts/seed.ts",
     "db:reset": "rm -f data/vayliron.db data/vayliron.db-wal data/vayliron.db-shm && tsx scripts/seed.ts",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "preview": "tsx scripts/preview.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

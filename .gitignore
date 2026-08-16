@@ -10,8 +10,9 @@ dist/
 # Local seeded database — rebuild it with `npm run db:reset`.
 data/
 
-# Smoke-test screenshots and scratch space.
+# Smoke-test screenshots, preview captures and scratch space.
 .smoke/
+.preview/
 .tmp/
 
 .env

@@ -258,7 +258,12 @@ npm run build && npm start &
 npm run smoke     # screenshots land in .smoke/
 ```
 
-It walks all four surfaces in one session: signs in as a rider and books a seat,
+There is also a capture script behind `npm run preview`, which photographs a
+curated set of screens — the rider and driver at phone width, the two control
+panels at desktop width — and `scripts/build-preview-page.py` folds them into a
+single self-contained walkthrough page.
+
+The smoke run walks all four surfaces in one session: signs in as a rider and books a seat,
 reads the issued pass code and opens the live map, switches to the HR hat to add
 a member of staff and pull an invoice, signs in as a controller to put that exact
 run ten minutes behind, works the door with the pass code, calls a stage, then
