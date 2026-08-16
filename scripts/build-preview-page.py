@@ -66,12 +66,16 @@ BODY = "".join(
             "Stage one",
             "The rider",
             "A commuter is standing at a stage in the dark, on a cheap phone, sometimes handing it "
-            "to a child to read the time. These screens follow three rules: one obvious thing to do "
-            "per screen, targets no smaller than a thumb, and labels you would say out loud.",
+            "to a child to read the time. So the app is four tabs, one question each, and the answer "
+            "is always the first thing on the screen \u2014 no scrolling to reach what you opened it for. "
+            "Every tab has exactly one loud card, painted in Vayliron\u2019s own gradient, carrying "
+            "whatever that tab exists for.",
             [
-                ("02-rider-today.jpg", "phone"),
+                ("02-rider-now.jpg", "phone"),
+                ("03-rider-ride.jpg", "phone"),
                 ("05-rider-booking.jpg", "phone"),
-                ("03-rider-ticket.jpg", "phone"),
+                ("06-rider-trips.jpg", "phone"),
+                ("07-rider-me.jpg", "phone"),
                 ("04-rider-tracking.jpg", "phone"),
             ],
         ),
@@ -81,7 +85,7 @@ BODY = "".join(
             "The driver",
             "Built for one hand at a stage before dawn. A driver only ever sees the runs they are "
             "rostered on; a controller can open any door to cover for them.",
-            [("06-driver-runs.jpg", "phone"), ("07-driver-run.jpg", "phone")],
+            [("08-driver-runs.jpg", "phone"), ("09-driver-run.jpg", "phone")],
         ),
         stop(
             3,
@@ -90,9 +94,9 @@ BODY = "".join(
             "What HR and finance at a corporate client actually operate. Deliberately dense — people "
             "paid to use a tool are served by information, not by big buttons.",
             [
-                ("08-company-overview.jpg", "desktop"),
-                ("09-company-people.jpg", "desktop"),
-                ("10-company-invoice.jpg", "desktop"),
+                ("10-company-overview.jpg", "desktop"),
+                ("11-company-people.jpg", "desktop"),
+                ("12-company-invoice.jpg", "desktop"),
             ],
         ),
         stop(
@@ -103,9 +107,9 @@ BODY = "".join(
             "it nobody at Vayliron could cancel a run, move a bus or answer a client asking what "
             "happened on Tuesday.",
             [
-                ("11-ops-board.jpg", "desktop"),
-                ("12-ops-trip.jpg", "desktop"),
-                ("13-ops-audit.jpg", "desktop"),
+                ("13-ops-board.jpg", "desktop"),
+                ("14-ops-trip.jpg", "desktop"),
+                ("15-ops-audit.jpg", "desktop"),
             ],
         ),
     ]
@@ -410,7 +414,7 @@ HTML = f"""<title>Vayliron Shared Transportation</title>
     <h1>Four apps riding one network.</h1>
     <p class="lede">
       A corporate bus line for Nairobi: eight scheduled lines over 44 real stages, Monday to
-      Saturday. Staff reserve a numbered seat and board with a six-character pass, drivers work
+      Saturday. Staff book a departure in one tap and board with a six-character pass, drivers work
       the door from a phone, HR sees the bill, and Vayliron runs the whole thing from a live
       board. Every screen below is the running application, not a mockup.
     </p>
@@ -419,8 +423,8 @@ HTML = f"""<title>Vayliron Shared Transportation</title>
       <span><b>8</b> lines</span>
       <span><b>44</b> stages</span>
       <span><b>480</b> seeded staff</span>
-      <span><b>123</b> tests</span>
-      <span><b>25</b> browser checks</span>
+      <span><b>126</b> tests</span>
+      <span><b>26</b> browser checks</span>
     </div>
   </header>
 
@@ -470,18 +474,27 @@ npm run dev        # http://localhost:3000</pre>
     <div class="panel" style="border-bottom: 0; padding-top: 20px;">
       <div class="panel__text">
         <p style="color: var(--muted);">
-          vayliron.com is a light site, so the app is light out of the box. The control in the
-          header pins light or dark, or follows the phone's own setting — and a pinned choice is
-          applied before the first paint, so it never flashes the wrong one.
+          vayliron.com is a light site, so the app is light out of the box. The control on the
+          rider's Me tab pins light or dark, or follows the phone's own setting — and a pinned
+          choice is applied before the first paint, so it never flashes the wrong one.
         </p>
       </div>
-      {screen('14-dark.jpg', 'phone')}
+      {screen('16-dark.jpg', 'phone')}
     </div>
   </section>
 
   <section class="band" style="background: var(--surface);">
-    <h2>Two things worth knowing</h2>
+    <h2>Three things worth knowing</h2>
     <div class="grid">
+      <div class="card">
+        <h3>Nobody picks a seat</h3>
+        <p>
+          These are city buses, not coaches. Riders used to be handed a seat grid before boarding a
+          shuttle nobody sits in assigned order on — a decision that cost every rider a tap and
+          bought nothing. Capacity is still exact: each booking takes the lowest free internal
+          place, guarded by a unique index, and that number is never shown to anyone.
+        </p>
+      </div>
       <div class="card">
         <h3>The brand is purple, not green</h3>
         <p>
@@ -494,7 +507,7 @@ npm run dev        # http://localhost:3000</pre>
         <h3>Attribution is a compile error</h3>
         <p>
           Every administrative write takes an actor argument, so a change nobody signed for will not
-          type-check. Cancelling a run records who did it, why, and how many seats it released.
+          type-check. Cancelling a run records who did it, why, and how many bookings it released.
         </p>
       </div>
     </div>
@@ -509,8 +522,9 @@ npm run dev        # http://localhost:3000</pre>
         edits an entry, but a database user could. Move it off the box before it settles a dispute.</li>
       <li><b>Payments are arithmetic only.</b> Employers are invoiced and staff shares described as
         payroll deductions; there is no M-Pesa integration behind that.</li>
-      <li><b>SQLite is single-node.</b> Correct under concurrency on one machine — the seat guards are
-        partial unique indexes — but it will not survive being scaled out.</li>
+      <li><b>SQLite is single-node.</b> Correct under concurrency on one machine — capacity is guarded
+        by partial unique indexes, so two riders cannot take the last place — but it will not survive
+        being scaled out.</li>
       <li><b>Gilmer is licensed.</b> The brand face is declared first and falls back to a system stack
         rather than shipping a lookalike.</li>
     </ul>

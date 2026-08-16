@@ -152,18 +152,18 @@ async function main() {
   await signIn(phonePage, rider.email, "/dashboard");
   await capture(
     phonePage,
-    "02-rider-today.jpg",
-    "Rider · Today",
-    "One card, one button. The time is the biggest thing on the screen, then where to get on, then the code to show the conductor.",
+    "02-rider-now.jpg",
+    "Rider · Now",
+    "Tab one answers one question: when is my bus. The countdown is the biggest thing on the screen, then where to get on, then the code to show at the door — and one button to watch it approach.",
     "phone",
   );
 
-  await phonePage.goto(`${BASE}/bookings`, { waitUntil: "networkidle" });
+  await phonePage.goto(`${BASE}/ride`, { waitUntil: "networkidle" });
   await capture(
     phonePage,
-    "03-rider-ticket.jpg",
-    "Rider · My trips",
-    "Each booked bus is a ticket you hold up at the door. The pass code is set large enough to read at arm's length.",
+    "03-rider-ride.jpg",
+    "Rider · Ride",
+    "Only the departures that run between this rider's own two stages, grouped by direction. Each row carries the three things that decide it: when it leaves, what it costs after the employer's share, and how full it is — as a phrase, not a fraction.",
     "phone",
   );
 
@@ -179,16 +179,30 @@ async function main() {
 
   const anotherTrip = pickBusyTrip();
   await phonePage.goto(`${BASE}/book/${anotherTrip}`, { waitUntil: "networkidle" });
-  if (await phonePage.locator('button[name="pick-board"]').count()) {
-    await phonePage.locator('button[name="pick-board"]').first().click();
-    await phonePage.locator('button[name="pick-alight"]').first().click();
-  }
   await phonePage.waitForTimeout(400);
   await capture(
     phonePage,
     "05-rider-booking.jpg",
     "Rider · Booking",
-    "Three questions asked one at a time. Answered ones collapse to a line with a Change link, so there is never more than one decision on screen.",
+    "A city bus has no seat to pick, and this rider's two stages are already on file — so booking is the journey, the price, and one button. Either end can be changed, which swaps the card for a single list of stages.",
+    "phone",
+  );
+
+  await phonePage.goto(`${BASE}/bookings`, { waitUntil: "networkidle" });
+  await capture(
+    phonePage,
+    "06-rider-trips.jpg",
+    "Rider · Trips",
+    "The next bus is the ticket, with the pass code set large enough to read at arm's length. Everything under it is history.",
+    "phone",
+  );
+
+  await phonePage.goto(`${BASE}/me`, { waitUntil: "networkidle" });
+  await capture(
+    phonePage,
+    "07-rider-me.jpg",
+    "Rider · Me",
+    "What the month has cost, what the employer covered, and the two stages every suggestion in the app is built from. Sign-out and the theme control live here, so the other three tabs stay entirely about buses.",
     "phone",
   );
 
@@ -197,7 +211,7 @@ async function main() {
   await phonePage.goto(`${BASE}/drive?date=${driver.serviceDate}`, { waitUntil: "networkidle" });
   await capture(
     phonePage,
-    "06-driver-runs.jpg",
+    "08-driver-runs.jpg",
     "Driver · My runs",
     "The day's roster with month-to-date runs, riders carried and on-time rate. Built for a phone held at a stage.",
     "phone",
@@ -206,7 +220,7 @@ async function main() {
   await phonePage.goto(`${BASE}/drive/${busyTrip}`, { waitUntil: "networkidle" });
   await capture(
     phonePage,
-    "07-driver-run.jpg",
+    "09-driver-run.jpg",
     "Driver · Working a run",
     "Open boarding, start the run, check riders in by pass code, call each stage, report a delay straight to control, then close out.",
     "phone",
@@ -217,7 +231,7 @@ async function main() {
   await deskPage.goto(`${BASE}/company`, { waitUntil: "networkidle" });
   await capture(
     deskPage,
-    "08-company-overview.jpg",
+    "10-company-overview.jpg",
     "Client panel · Overview",
     "What the employer is spending, how much of the headcount actually rides, attendance against no-shows, and utilisation line by line.",
     "desktop",
@@ -226,7 +240,7 @@ async function main() {
   await deskPage.goto(`${BASE}/company/people`, { waitUntil: "networkidle" });
   await capture(
     deskPage,
-    "09-company-people.jpg",
+    "11-company-people.jpg",
     "Client panel · People",
     "HR adds, edits and deactivates staff. Deactivating someone releases any seat they hold on a future departure rather than letting it run empty.",
     "desktop",
@@ -235,7 +249,7 @@ async function main() {
   await deskPage.goto(`${BASE}/company/invoices`, { waitUntil: "networkidle" });
   await capture(
     deskPage,
-    "10-company-invoice.jpg",
+    "12-company-invoice.jpg",
     "Client panel · Invoice",
     "The monthly bill, a line per rider, with a CSV export. Road passenger transport is VAT-exempt in Kenya, so no VAT line.",
     "desktop",
@@ -245,7 +259,7 @@ async function main() {
   await signIn(deskPage, "naliaka.wekesa@vayliron.co.ke", "/ops");
   await capture(
     deskPage,
-    "11-ops-board.jpg",
+    "13-ops-board.jpg",
     "Control · Network board",
     "Load, fare revenue, delayed runs and open incidents, with a per-line rollup and whatever is on the road right now.",
     "desktop",
@@ -254,16 +268,16 @@ async function main() {
   await deskPage.goto(`${BASE}/ops/trips/${busyTrip}`, { waitUntil: "networkidle" });
   await capture(
     deskPage,
-    "12-ops-trip.jpg",
+    "14-ops-trip.jpg",
     "Control · One departure",
-    "Where a controller intervenes: delay the run, swap the bus or driver, or cancel it with a reason — which releases every sold seat.",
+    "Where a controller intervenes: delay the run, swap the bus or driver, or cancel it with a reason — which releases every booking on it.",
     "desktop",
   );
 
   await deskPage.goto(`${BASE}/ops/audit`, { waitUntil: "networkidle" });
   await capture(
     deskPage,
-    "13-ops-audit.jpg",
+    "15-ops-audit.jpg",
     "Control · Audit trail",
     "Who changed what. Every administrative write takes an actor, so an unattributed change is a compile error rather than an omission.",
     "desktop",
@@ -275,9 +289,9 @@ async function main() {
   await signIn(darkPage, rider.email, "/dashboard");
   await capture(
     darkPage,
-    "14-dark.jpg",
+    "16-dark.jpg",
     "The dark theme",
-    "Light by default, matching vayliron.com. The header control pins light or dark, or follows the phone's own setting.",
+    "Light by default, matching vayliron.com. The control on the Me tab pins light or dark, or follows the phone's own setting.",
     "phone",
   );
 
