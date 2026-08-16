@@ -521,3 +521,119 @@ export const BODY_TYPE_LABEL: Record<BodyType, string> = {
   bus: "Bus (33–51 seats)",
   coach: "Coach (51+ seats)",
 };
+
+/* ------------------------------------------------------------------ *
+ * Earnings
+ * ------------------------------------------------------------------ */
+
+export interface DailyEarning {
+  date: string;
+  riders: number;
+  grossKes: number;
+  ownerKes: number;
+}
+
+export interface EarningsSummary {
+  grossKes: number;
+  ownerKes: number;
+  commissionKes: number;
+  riders: number;
+  pendingKes: number;
+  byDay: DailyEarning[];
+  byVehicle: { plate: string; riders: number; ownerKes: number }[];
+}
+
+/**
+ * What an owner is owed, and where it came from.
+ *
+ * Gross is what riders paid; the owner's share is what they keep after
+ * Vayliron's commission. Both are read off the payment rows rather than
+ * recomputed from the current rate, because a rate change must not restate a
+ * month that has already been paid out.
+ */
+export function ownerEarnings(ownerId: string, from: string, to: string): EarningsSummary {
+  const conn = db();
+
+  const totals = conn
+    .prepare(
+      `SELECT COALESCE(SUM(p.amount_kes), 0) AS gross,
+              COALESCE(SUM(p.owner_kes), 0)  AS owner_share,
+              COALESCE(SUM(p.network_kes), 0) AS commission,
+              COUNT(p.id) AS riders
+         FROM payments p
+         JOIN bookings b ON b.id = p.booking_id
+         JOIN trips t ON t.id = b.trip_id
+         JOIN vehicles v ON v.id = t.vehicle_id
+        WHERE v.owner_id = ? AND p.status = 'paid'
+          AND t.service_date BETWEEN ? AND ?`,
+    )
+    .get(ownerId, from, to) as Row;
+
+  const pending = conn
+    .prepare(
+      `SELECT COALESCE(SUM(p.owner_kes), 0) AS n
+         FROM payments p
+         JOIN bookings b ON b.id = p.booking_id
+         JOIN trips t ON t.id = b.trip_id
+         JOIN vehicles v ON v.id = t.vehicle_id
+        WHERE v.owner_id = ? AND p.status = 'pending'
+          AND t.service_date BETWEEN ? AND ?`,
+    )
+    .get(ownerId, from, to) as Row;
+
+  const byDay = (
+    conn
+      .prepare(
+        `SELECT t.service_date AS date,
+                COUNT(p.id) AS riders,
+                COALESCE(SUM(p.amount_kes), 0) AS gross,
+                COALESCE(SUM(p.owner_kes), 0) AS owner_share
+           FROM payments p
+           JOIN bookings b ON b.id = p.booking_id
+           JOIN trips t ON t.id = b.trip_id
+           JOIN vehicles v ON v.id = t.vehicle_id
+          WHERE v.owner_id = ? AND p.status = 'paid'
+            AND t.service_date BETWEEN ? AND ?
+          GROUP BY t.service_date
+          ORDER BY t.service_date`,
+      )
+      .all(ownerId, from, to) as Row[]
+  ).map((r) => ({
+    date: r.date as string,
+    riders: r.riders as number,
+    grossKes: r.gross as number,
+    ownerKes: r.owner_share as number,
+  }));
+
+  const byVehicle = (
+    conn
+      .prepare(
+        `SELECT v.plate AS plate,
+                COUNT(p.id) AS riders,
+                COALESCE(SUM(p.owner_kes), 0) AS owner_share
+           FROM payments p
+           JOIN bookings b ON b.id = p.booking_id
+           JOIN trips t ON t.id = b.trip_id
+           JOIN vehicles v ON v.id = t.vehicle_id
+          WHERE v.owner_id = ? AND p.status = 'paid'
+            AND t.service_date BETWEEN ? AND ?
+          GROUP BY v.id
+          ORDER BY owner_share DESC`,
+      )
+      .all(ownerId, from, to) as Row[]
+  ).map((r) => ({
+    plate: r.plate as string,
+    riders: r.riders as number,
+    ownerKes: r.owner_share as number,
+  }));
+
+  return {
+    grossKes: totals.gross as number,
+    ownerKes: totals.owner_share as number,
+    commissionKes: totals.commission as number,
+    riders: totals.riders as number,
+    pendingKes: pending.n as number,
+    byDay,
+    byVehicle,
+  };
+}
