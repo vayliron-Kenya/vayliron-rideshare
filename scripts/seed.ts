@@ -12,15 +12,18 @@ import Database from "better-sqlite3";
 
 import {
   buildDrivers,
+  bodyTypeFor,
   buildFleet,
   COMPANIES,
   EMPLOYEES,
   OPERATORS,
+  OWNERS,
   ROUTES,
   STOPS,
   type EmployeeSeed,
 } from "@/lib/data/nairobi";
 import { fareForKm, splitFare } from "@/lib/domain/fares";
+import { generateReceipt, splitPayment } from "@/lib/domain/payments";
 import { isServiceDay, orderedStops, TIMETABLE, timetableFor } from "@/lib/domain/schedule";
 import { BusFullError, generatePassCode, nextFreePlace } from "@/lib/domain/boarding";
 import { addDays, nairobiDate, nairobiInstant } from "@/lib/domain/time";
@@ -123,7 +126,9 @@ for (const table of [
   "route_stops",
   "routes",
   "stops",
+  "vehicle_photos",
   "vehicles",
+  "owners",
   "drivers",
   "operators",
 ]) {
@@ -191,10 +196,65 @@ const fleetSize = ROUTES.length * TIMETABLE.inbound.length;
 const fleet = buildFleet(fleetSize);
 const roster = buildDrivers(fleetSize);
 
-const insertVehicle = conn.prepare(
-  "INSERT INTO vehicles (id, plate, model, capacity, wifi, usb_ports, operator) VALUES (?, ?, ?, ?, ?, ?, ?)",
+const insertOwner = conn.prepare(
+  `INSERT INTO owners (id, name, kind, contact_name, email, phone, kra_pin, payout_bps, active, created_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
 );
+OWNERS.forEach((o, i) => {
+  insertOwner.run(
+    `own_${String(i + 1).padStart(3, "0")}`,
+    o.name,
+    o.kind,
+    o.contactName,
+    o.email,
+    o.phone,
+    o.kraPin,
+    o.payoutBps,
+    nowIso,
+  );
+});
+
+const insertVehicle = conn.prepare(
+  `INSERT INTO vehicles
+     (id, plate, model, capacity, wifi, usb_ports, operator, owner_id, body_type,
+      status, submitted_at, reviewed_at, reviewed_by)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+);
+
+/**
+ * Most of the fleet is approved and working. Three units are left mid-review so
+ * the owner panel and the HQ approval queue both have something real in them:
+ * one waiting on Vayliron, one turned down, one still a draft the owner has not
+ * finished photographing.
+ */
+const PENDING_INDEX = 3;
+const REJECTED_INDEX = 7;
+const DRAFT_INDEX = 11;
+const UNAPPROVED = new Set([PENDING_INDEX, REJECTED_INDEX, DRAFT_INDEX]);
+
 fleet.forEach((v, i) => {
+  const ownerId = `own_${String((i % OWNERS.length) + 1).padStart(3, "0")}`;
+  const submittedAt = nairobiInstant(addDays(today, -(14 + (i % 30))), "09:00").toISOString();
+
+  let status = "approved";
+  let reviewedAt: string | null = nairobiInstant(
+    addDays(today, -(12 + (i % 30))),
+    "11:30",
+  ).toISOString();
+  let reviewedBy: string | null = OPERATORS[0].name;
+
+  if (i === PENDING_INDEX) {
+    status = "pending";
+    reviewedAt = null;
+    reviewedBy = null;
+  } else if (i === REJECTED_INDEX) {
+    status = "rejected";
+  } else if (i === DRAFT_INDEX) {
+    status = "draft";
+    reviewedAt = null;
+    reviewedBy = null;
+  }
+
   insertVehicle.run(
     `veh_${String(i + 1).padStart(3, "0")}`,
     v.plate,
@@ -203,8 +263,21 @@ fleet.forEach((v, i) => {
     v.wifi ? 1 : 0,
     v.usbPorts,
     v.operator,
+    ownerId,
+    bodyTypeFor(v.capacity),
+    status,
+    status === "draft" ? null : submittedAt,
+    reviewedAt,
+    reviewedBy,
   );
 });
+
+conn
+  .prepare("UPDATE vehicles SET review_note = ? WHERE id = ?")
+  .run(
+    "The interior photograph shows torn seat covers on the rear bench. Re-upholster and resubmit.",
+    `veh_${String(REJECTED_INDEX + 1).padStart(3, "0")}`,
+  );
 
 const insertDriver = conn.prepare(
   `INSERT INTO drivers (id, name, phone, psv_licence, rating_bps, email, active)
@@ -411,6 +484,10 @@ interface TripRecord {
 }
 
 const trips: TripRecord[] = [];
+const approvedFleet = fleet
+  .map((_, i) => i)
+  .filter((i) => !UNAPPROVED.has(i));
+
 const tripByKey = new Map<string, TripRecord>();
 let tripSeq = 0;
 
@@ -422,11 +499,15 @@ const seedTrips = conn.transaction(() => {
           const routeId = `rte_${route.slug}`;
           const stops = orderedStops(routeStops.get(routeId)!, direction);
 
-          // Each route+slot gets its own bus for the whole day.
+          // Each route+slot gets its own bus for the whole day, skipping any
+          // unit HQ has not approved — an unapproved bus carries nobody, and
+          // seeding one onto a departure would contradict the whole point of
+          // the approval queue.
           const unit = slot * ROUTES.length + routeIndex;
-          const vehicleId = `veh_${String((unit % fleetSize) + 1).padStart(3, "0")}`;
+          const index = approvedFleet[unit % approvedFleet.length];
+          const vehicleId = `veh_${String(index + 1).padStart(3, "0")}`;
           const driverId = `drv_${String((unit % fleetSize) + 1).padStart(3, "0")}`;
-          const capacity = fleet[unit % fleetSize].capacity;
+          const capacity = fleet[index].capacity;
 
           tripSeq += 1;
           const id = `trp_${String(tripSeq).padStart(6, "0")}`;
@@ -614,6 +695,80 @@ const seedBookings = conn.transaction(() => {
 seedBookings();
 
 /* -------------------------------------------------------------- *
+ * Payments
+ * -------------------------------------------------------------- */
+
+/*
+ * Every place taken on a bus is money that moved, split between the owner of
+ * that bus and Vayliron's commission. The rider's own share goes over M-Pesa;
+ * where an employer covers the whole fare there is no push to the rider's
+ * phone, so the method says so rather than inventing a transaction.
+ */
+const payoutByVehicle = new Map<string, number>(
+  (
+    conn
+      .prepare("SELECT v.id AS id, o.payout_bps AS bps FROM vehicles v JOIN owners o ON o.id = v.owner_id")
+      .all() as { id: string; bps: number }[]
+  ).map((r) => [r.id, r.bps]),
+);
+
+const insertPayment = conn.prepare(
+  `INSERT INTO payments
+     (id, booking_id, method, phone, amount_kes, owner_kes, network_kes, status,
+      reference, created_at, settled_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+);
+
+let paymentSeq = 0;
+
+const seedPayments = conn.transaction(() => {
+  const rows = conn
+    .prepare(
+      `SELECT b.id, b.fare_kes, b.employee_kes, b.status, b.created_at,
+              t.vehicle_id, e.phone
+         FROM bookings b
+         JOIN trips t ON t.id = b.trip_id
+         JOIN employees e ON e.id = b.employee_id
+        WHERE b.status != 'cancelled'`,
+    )
+    .all() as {
+    id: string;
+    fare_kes: number;
+    employee_kes: number;
+    status: string;
+    created_at: string;
+    vehicle_id: string;
+    phone: string;
+  }[];
+
+  for (const row of rows) {
+    const split = splitPayment(row.fare_kes, payoutByVehicle.get(row.vehicle_id) ?? 8500);
+    const method = row.employee_kes > 0 ? "mpesa" : "employer";
+
+    // A handful of the newest bookings are still waiting on the STK push, which
+    // is what the real world looks like at any given moment.
+    const settled = paymentSeq % 37 !== 0;
+
+    paymentSeq += 1;
+    insertPayment.run(
+      `pay_${String(paymentSeq).padStart(6, "0")}`,
+      row.id,
+      method,
+      method === "mpesa" ? row.phone : null,
+      split.amountKes,
+      split.ownerKes,
+      split.networkKes,
+      settled ? "paid" : "pending",
+      settled && method === "mpesa" ? generateReceipt(rand) : null,
+      row.created_at,
+      settled ? row.created_at : null,
+    );
+  }
+});
+
+seedPayments();
+
+/* -------------------------------------------------------------- *
  * Live telemetry for anything currently rolling
  * -------------------------------------------------------------- */
 
@@ -795,6 +950,8 @@ console.log(`  service window   ${serviceDates[0]} → ${serviceDates[serviceDat
 console.log(`  stops            ${count("stops")}`);
 console.log(`  routes           ${count("routes")}`);
 console.log(`  fleet / drivers  ${count("vehicles")} / ${count("drivers")}`);
+console.log(`  owners           ${count("owners")}`);
+console.log(`  payments         ${count("payments")}`);
 console.log(`  companies        ${count("companies")}`);
 console.log(`  employees        ${count("employees")}`);
 console.log(`  trips            ${count("trips")}`);
@@ -824,6 +981,11 @@ const firstDriver = conn
   .all() as { name: string; email: string }[];
 for (const d of firstDriver) {
   console.log(`    ${d.email.padEnd(40)} (${d.name})`);
+}
+console.log("");
+console.log("  Bus owner panel");
+for (const o of OWNERS.slice(0, 3)) {
+  console.log(`    ${o.email.padEnd(40)} (${o.contactName}, ${o.name})`);
 }
 console.log("");
 console.log("  Rider app");

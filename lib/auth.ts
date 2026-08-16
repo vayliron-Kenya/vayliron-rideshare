@@ -5,8 +5,9 @@ import { cookies } from "next/headers";
 
 import type { Actor } from "@/lib/audit";
 import { getDriver, getDriverByEmail, getOperator, getOperatorByEmail } from "@/lib/ops";
+import { getOwner, getOwnerByEmail } from "@/lib/owners";
 import { getCompany, getEmployee, getEmployeeByEmail } from "@/lib/queries";
-import type { Company, Driver, Employee, Operator } from "@/lib/types";
+import type { Company, Driver, Employee, Operator, Owner } from "@/lib/types";
 
 const COOKIE = "vayliron_session";
 const MAX_AGE_SECONDS = 60 * 60 * 12;
@@ -36,16 +37,17 @@ function verify(value: string, signature: string): boolean {
 /**
  * Who is signed in.
  *
- * Three kinds of people use Vayliron and they are not variations of one
- * account: a commuter belongs to a client company, a driver belongs to the
- * fleet, and a controller works for Vayliron itself. Modelling them as one
- * "user" row with a role column would mean every query carried a nullable
- * company id it could not trust.
+ * Four kinds of people use Vayliron and they are not variations of one
+ * account: a commuter belongs to a client company, a driver works the door, a
+ * controller works for Vayliron itself, and an owner owns the actual bus.
+ * Modelling them as one "user" row with a role column would mean every query
+ * carried a nullable company id it could not trust.
  */
 export type Principal =
   | { kind: "employee"; employee: Employee; company: Company }
   | { kind: "driver"; driver: Driver }
-  | { kind: "operator"; operator: Operator };
+  | { kind: "operator"; operator: Operator }
+  | { kind: "owner"; owner: Owner };
 
 export type PrincipalKind = Principal["kind"];
 
@@ -56,6 +58,8 @@ export function homePath(principal: Principal): string {
       return "/ops";
     case "driver":
       return "/drive";
+    case "owner":
+      return "/fleet";
     default:
       return "/dashboard";
   }
@@ -67,6 +71,8 @@ export function displayName(principal: Principal): string {
       return principal.operator.name;
     case "driver":
       return principal.driver.name;
+    case "owner":
+      return principal.owner.contactName;
     default:
       return principal.employee.name;
   }
@@ -80,6 +86,8 @@ export function displayOrg(principal: Principal): string {
         : "Vayliron · Control";
     case "driver":
       return "Vayliron · Driver";
+    case "owner":
+      return principal.owner.name;
     default:
       return principal.company.name;
   }
@@ -96,6 +104,8 @@ export function actorFrom(principal: Principal): Actor {
       };
     case "driver":
       return { kind: "driver", id: principal.driver.id, name: principal.driver.name };
+    case "owner":
+      return { kind: "owner", id: principal.owner.id, name: principal.owner.name };
     default:
       return {
         kind: "employee",
@@ -130,6 +140,11 @@ export async function getPrincipal(): Promise<Principal | null> {
     return driver && driver.active ? { kind: "driver", driver } : null;
   }
 
+  if (kind === "owner") {
+    const owner = getOwner(id);
+    return owner && owner.active ? { kind: "owner", owner } : null;
+  }
+
   const employee = getEmployee(id);
   if (!employee || !employee.active) return null;
   const company = getCompany(employee.companyId);
@@ -141,7 +156,9 @@ function splitSubject(subject: string): [PrincipalKind | null, string | null] {
   if (at < 1) return [null, null];
   const kind = subject.slice(0, at);
   const id = subject.slice(at + 1);
-  if (kind !== "employee" && kind !== "driver" && kind !== "operator") return [null, null];
+  if (kind !== "employee" && kind !== "driver" && kind !== "operator" && kind !== "owner") {
+    return [null, null];
+  }
   return [kind, id];
 }
 
@@ -172,6 +189,12 @@ export async function getDriverSession(): Promise<Driver | null> {
   return principal?.kind === "driver" ? principal.driver : null;
 }
 
+/** The bus owner's session, for the fleet control panel. */
+export async function getOwnerSession(): Promise<Owner | null> {
+  const principal = await getPrincipal();
+  return principal?.kind === "owner" ? principal.owner : null;
+}
+
 export async function getOperatorSession(): Promise<Operator | null> {
   const principal = await getPrincipal();
   return principal?.kind === "operator" ? principal.operator : null;
@@ -192,7 +215,7 @@ export type SignInResult =
   | { ok: false; error: string };
 
 /**
- * Resolves an email against all three directories.
+ * Resolves an email against all four directories.
  *
  * Controllers are checked first and riders last, because a Vayliron
  * controller who also rides should land on the operations board.
@@ -206,6 +229,9 @@ export async function signIn(email: string): Promise<SignInResult> {
   const driver = getDriverByEmail(trimmed);
   if (driver) return establish({ kind: "driver", driver });
 
+  const owner = getOwnerByEmail(trimmed);
+  if (owner) return establish({ kind: "owner", owner });
+
   const employee = getEmployeeByEmail(trimmed);
   if (employee) {
     const company = getCompany(employee.companyId);
@@ -214,7 +240,8 @@ export async function signIn(email: string): Promise<SignInResult> {
 
   return {
     ok: false,
-    error: "We don't recognise that email. Ask your HR admin or your Vayliron contact to add you.",
+    error:
+      "We don't recognise that email. Ask your HR admin or your Vayliron contact to add you.",
   };
 }
 
@@ -224,7 +251,9 @@ async function establish(principal: Principal): Promise<SignInResult> {
       ? principal.operator.id
       : principal.kind === "driver"
         ? principal.driver.id
-        : principal.employee.id;
+        : principal.kind === "owner"
+          ? principal.owner.id
+          : principal.employee.id;
 
   const subject = `${principal.kind}:${id}`;
   (await cookies()).set(COOKIE, `${subject}.${sign(subject)}`, {

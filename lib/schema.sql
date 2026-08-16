@@ -48,6 +48,26 @@ CREATE TABLE IF NOT EXISTS route_stops (
   UNIQUE (route_id, seq)
 );
 
+-- Nairobi's bus network is privately owned: a SACCO or a single person buys a
+-- matatu or a coach and puts it on a route. Vayliron does not own the fleet, it
+-- runs the network the fleet works on — so an owner is a first-class account
+-- who submits vehicles and gets paid, not a string in a column.
+CREATE TABLE IF NOT EXISTS owners (
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL,               -- trading name, or the person's name
+  kind         TEXT NOT NULL DEFAULT 'individual'
+               CHECK (kind IN ('individual', 'sacco', 'company')),
+  contact_name TEXT NOT NULL,
+  email        TEXT NOT NULL UNIQUE,        -- how they sign in
+  phone        TEXT NOT NULL,               -- +2547.., where payouts go
+  kra_pin      TEXT NOT NULL,
+  -- Share of each fare the owner keeps, in basis points. The rest is Vayliron's
+  -- commission for carrying the network, the app and the payments.
+  payout_bps   INTEGER NOT NULL DEFAULT 8500 CHECK (payout_bps BETWEEN 0 AND 10000),
+  active       INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS vehicles (
   id        TEXT PRIMARY KEY,
   plate     TEXT NOT NULL UNIQUE,
@@ -55,8 +75,38 @@ CREATE TABLE IF NOT EXISTS vehicles (
   capacity  INTEGER NOT NULL CHECK (capacity > 0),
   wifi      INTEGER NOT NULL DEFAULT 0,
   usb_ports INTEGER NOT NULL DEFAULT 0,
-  operator  TEXT NOT NULL
+  operator  TEXT NOT NULL,
+  -- Who owns the metal. Null only for the units Vayliron runs itself.
+  owner_id  TEXT REFERENCES owners(id),
+  body_type TEXT NOT NULL DEFAULT 'bus'
+            CHECK (body_type IN ('matatu', 'minibus', 'bus', 'coach')),
+  -- A vehicle cannot carry anyone until HQ has looked at the photos and said
+  -- yes. Everything downstream keys off this, so it is not a nullable flag.
+  status    TEXT NOT NULL DEFAULT 'approved'
+            CHECK (status IN ('draft', 'pending', 'approved', 'rejected', 'suspended')),
+  submitted_at TEXT,
+  reviewed_at  TEXT,
+  reviewed_by  TEXT,                        -- operator name, as it read that day
+  review_note  TEXT                         -- why it was rejected, in plain words
 );
+
+CREATE INDEX IF NOT EXISTS idx_vehicles_owner ON vehicles(owner_id);
+CREATE INDEX IF NOT EXISTS idx_vehicles_pending ON vehicles(submitted_at) WHERE status = 'pending';
+
+-- HQ approves a bus by looking at it. Four angles, because a plate photo alone
+-- proves nothing about whether the inside is fit to carry people.
+CREATE TABLE IF NOT EXISTS vehicle_photos (
+  id          TEXT PRIMARY KEY,
+  vehicle_id  TEXT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  angle       TEXT NOT NULL
+              CHECK (angle IN ('exterior', 'interior', 'plate', 'logbook')),
+  mime        TEXT NOT NULL,
+  bytes       INTEGER NOT NULL CHECK (bytes > 0),
+  filename    TEXT NOT NULL,                -- on disk, under data/vehicle-photos
+  uploaded_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_photos ON vehicle_photos(vehicle_id);
 
 CREATE TABLE IF NOT EXISTS drivers (
   id         TEXT PRIMARY KEY,
@@ -148,6 +198,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bookings_one_per_trip
   ON bookings(trip_id, employee_id) WHERE status IN ('booked','boarded');
 CREATE INDEX IF NOT EXISTS idx_bookings_employee ON bookings(employee_id);
 
+-- What the rider actually paid, and where it went.
+--
+-- Kept apart from the booking because they answer different questions and fail
+-- independently: a booking is a place on a bus, a payment is money moving. An
+-- M-Pesa push can be pending while the rider is already aboard.
+CREATE TABLE IF NOT EXISTS payments (
+  id           TEXT PRIMARY KEY,
+  booking_id   TEXT NOT NULL UNIQUE REFERENCES bookings(id) ON DELETE CASCADE,
+  method       TEXT NOT NULL CHECK (method IN ('mpesa', 'cash', 'employer')),
+  phone        TEXT,                        -- the number the STK push went to
+  amount_kes   INTEGER NOT NULL CHECK (amount_kes >= 0),
+  -- Split of amount_kes at the moment it was taken, so a later change to the
+  -- owner's rate never rewrites history.
+  owner_kes    INTEGER NOT NULL DEFAULT 0 CHECK (owner_kes >= 0),
+  network_kes  INTEGER NOT NULL DEFAULT 0 CHECK (network_kes >= 0),
+  status       TEXT NOT NULL DEFAULT 'pending'
+               CHECK (status IN ('pending', 'paid', 'failed')),
+  reference    TEXT,                        -- M-Pesa receipt, e.g. SJK4XR9QW1
+  created_at   TEXT NOT NULL,
+  settled_at   TEXT,
+  CHECK (owner_kes + network_kes = amount_kes)
+);
+
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status, created_at DESC);
+
 -- Telemetry from the on-board tracker. Seeded trips get their position derived
 -- from the schedule instead (see lib/domain/tracking.ts), so this table only
 -- carries pings that a real device actually reported.
@@ -205,7 +280,7 @@ CREATE TABLE IF NOT EXISTS audit_events (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   at            TEXT NOT NULL,
   actor_kind    TEXT NOT NULL
-                CHECK (actor_kind IN ('employee', 'driver', 'operator', 'system')),
+                CHECK (actor_kind IN ('employee', 'driver', 'operator', 'owner', 'system')),
   actor_id      TEXT NOT NULL,
   actor_name    TEXT NOT NULL,
   action        TEXT NOT NULL,               -- dotted verb, e.g. "trip.cancel"

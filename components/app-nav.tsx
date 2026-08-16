@@ -7,7 +7,7 @@ import { signOutAction } from "@/app/actions";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export interface NavProps {
-  kind: "employee" | "driver" | "operator" | null;
+  kind: "employee" | "driver" | "operator" | "owner" | null;
   name: string;
   org: string;
   /** Company admins get the client control panel; controllers get the ops one. */
@@ -37,6 +37,13 @@ function linksFor(props: NavProps): NavLink[] {
     return [{ href: "/drive", label: "My runs" }];
   }
 
+  if (props.kind === "owner") {
+    return [
+      { href: "/fleet", label: "My buses" },
+      { href: "/fleet/earnings", label: "Earnings" },
+    ];
+  }
+
   // Riders navigate from the bottom tab bar, so the top of their screen stays
   // empty — one navigation system per surface, not two disagreeing ones.
   return [];
@@ -45,6 +52,7 @@ function linksFor(props: NavProps): NavLink[] {
 const AREA_LABEL: Record<string, string> = {
   operator: "Control",
   driver: "Driver",
+  owner: "Fleet",
   employee: "",
 };
 

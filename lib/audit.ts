@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
  * type error rather than something someone forgot. The alternative — recording
  * from the page layer — silently misses any call made from anywhere else.
  */
-export type ActorKind = "employee" | "driver" | "operator" | "system";
+export type ActorKind = "employee" | "driver" | "operator" | "owner" | "system";
 
 export interface Actor {
   kind: ActorKind;
@@ -28,7 +28,8 @@ export type SubjectKind =
   | "vehicle"
   | "route"
   | "stop"
-  | "incident";
+  | "incident"
+  | "owner";
 
 export interface AuditEvent {
   id: number;

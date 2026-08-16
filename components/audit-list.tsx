@@ -6,6 +6,7 @@ import type { AuditEvent } from "@/lib/audit";
 const ACTOR_TONE = {
   operator: "sky",
   driver: "amber",
+  owner: "flame",
   employee: "brand",
   system: "neutral",
 } as const;
@@ -13,6 +14,7 @@ const ACTOR_TONE = {
 const ACTOR_LABEL = {
   operator: "Control",
   driver: "Driver",
+  owner: "Owner",
   employee: "Client",
   system: "System",
 } as const;

@@ -38,6 +38,11 @@ export interface RouteStop extends Stop {
   minFromStart: number;
 }
 
+/** Where a bus sits in HQ's approval queue. */
+export type VehicleStatus = "draft" | "pending" | "approved" | "rejected" | "suspended";
+
+export type BodyType = "matatu" | "minibus" | "bus" | "coach";
+
 export interface Vehicle {
   id: string;
   plate: string;
@@ -46,6 +51,58 @@ export interface Vehicle {
   wifi: number;
   usbPorts: number;
   operator: string;
+  ownerId: string | null;
+  bodyType: BodyType;
+  status: VehicleStatus;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+}
+
+export type OwnerKind = "individual" | "sacco" | "company";
+
+/** The person or SACCO that owns the metal. Vayliron owns the network, not the fleet. */
+export interface Owner {
+  id: string;
+  name: string;
+  kind: OwnerKind;
+  contactName: string;
+  email: string;
+  phone: string;
+  kraPin: string;
+  payoutBps: number;
+  active: number;
+  createdAt: string;
+}
+
+export type PhotoAngle = "exterior" | "interior" | "plate" | "logbook";
+
+export interface VehiclePhoto {
+  id: string;
+  vehicleId: string;
+  angle: PhotoAngle;
+  mime: string;
+  bytes: number;
+  filename: string;
+  uploadedAt: string;
+}
+
+export type PaymentMethod = "mpesa" | "cash" | "employer";
+export type PaymentStatus = "pending" | "paid" | "failed";
+
+export interface Payment {
+  id: string;
+  bookingId: string;
+  method: PaymentMethod;
+  phone: string | null;
+  amountKes: number;
+  ownerKes: number;
+  networkKes: number;
+  status: PaymentStatus;
+  reference: string | null;
+  createdAt: string;
+  settledAt: string | null;
 }
 
 export interface Driver {

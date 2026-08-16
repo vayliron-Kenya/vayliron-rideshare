@@ -54,6 +54,14 @@ const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
   { table: "drivers", column: "active", definition: "INTEGER NOT NULL DEFAULT 1" },
   { table: "trips", column: "delay_minutes", definition: "INTEGER NOT NULL DEFAULT 0" },
   { table: "trips", column: "cancel_reason", definition: "TEXT" },
+  // The fleet became owner-submitted rather than Vayliron's own.
+  { table: "vehicles", column: "owner_id", definition: "TEXT REFERENCES owners(id)" },
+  { table: "vehicles", column: "body_type", definition: "TEXT NOT NULL DEFAULT 'bus'" },
+  { table: "vehicles", column: "status", definition: "TEXT NOT NULL DEFAULT 'approved'" },
+  { table: "vehicles", column: "submitted_at", definition: "TEXT" },
+  { table: "vehicles", column: "reviewed_at", definition: "TEXT" },
+  { table: "vehicles", column: "reviewed_by", definition: "TEXT" },
+  { table: "vehicles", column: "review_note", definition: "TEXT" },
 ];
 
 function migrate(conn: Database.Database): void {

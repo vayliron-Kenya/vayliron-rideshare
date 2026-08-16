@@ -50,6 +50,13 @@ const toVehicle = (r: Row): Vehicle => ({
   wifi: r.wifi as number,
   usbPorts: r.usb_ports as number,
   operator: r.operator as string,
+  ownerId: (r.owner_id as string) ?? null,
+  bodyType: (r.body_type as Vehicle["bodyType"]) ?? "bus",
+  status: (r.status as Vehicle["status"]) ?? "approved",
+  submittedAt: (r.submitted_at as string) ?? null,
+  reviewedAt: (r.reviewed_at as string) ?? null,
+  reviewedBy: (r.reviewed_by as string) ?? null,
+  reviewNote: (r.review_note as string) ?? null,
 });
 
 const toEmployee = (r: Row): Employee => ({
