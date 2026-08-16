@@ -107,8 +107,19 @@ export function AppNav(props: NavProps) {
         ) : null}
 
         <div className="ml-auto flex shrink-0 items-center gap-3">
-          {/* Riders get the theme control on their Me tab, not in the chrome. */}
-          {rider ? null : <ThemeToggle />}
+          {/* Riders get the theme control on their account screen, not in the
+              chrome, so the three tabs below stay entirely about buses. */}
+          {rider ? (
+            <Link
+              href="/me"
+              aria-label="Your account"
+              className="flex size-10 items-center justify-center rounded-full border-2 border-edge text-sm font-bold text-body transition-colors hover:border-brand hover:text-accent"
+            >
+              {initials(props.name)}
+            </Link>
+          ) : (
+            <ThemeToggle />
+          )}
           {rider ? null : props.kind ? (
             <>
               <div className="hidden text-right sm:block">
@@ -136,6 +147,14 @@ export function AppNav(props: NavProps) {
       </div>
     </header>
   );
+}
+
+/** Two letters is enough to say "this is you" in a 40px circle. */
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
 function Mark() {

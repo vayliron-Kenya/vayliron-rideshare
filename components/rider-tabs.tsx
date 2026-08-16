@@ -3,38 +3,37 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { BusIcon, PersonIcon, RouteIcon, TicketIcon } from "@/components/icons";
+import { PinIcon, RouteIcon, TicketIcon } from "@/components/icons";
 
 /**
- * The rider's whole app, four tabs wide.
+ * The rider's whole app, three tabs wide.
  *
- * A commuter uses this standing up, one-handed, often while a bus is pulling
- * in. Scrolling to find the thing you opened the app for is the wrong shape
- * for that, so the rider surface is cut into four screens that each answer one
- * question, and the answer is always the first thing you see:
+ * A rider on a Nairobi bus wants three things and genuinely nothing else:
+ * where their bus is and how close it is getting, which lines are running, and
+ * what they owe. So there are three tabs, not a menu:
  *
- *   Now   — when is my bus and where is it?
- *   Ride  — book the next one.
- *   Trips — what have I booked, and what is my code?
- *   Me    — what has this cost, and what is on file about me?
+ *   Track  — where is my bus, and how long until it reaches me?
+ *   Routes — which lines are alive right now, and can I get on one?
+ *   Pay    — what do I owe, and what have I paid?
  *
- * The bar sits at the bottom because that is where a thumb is, and it clears
- * the phone's home indicator with `env(safe-area-inset-bottom)`.
+ * Anything about the account — spend, home and work stages, signing out —
+ * lives behind the profile button in the header, so it never competes with a
+ * bus for a thumb. The bar sits at the bottom because that is where a thumb
+ * is, and clears the phone's home indicator with `env(safe-area-inset-bottom)`.
  */
 
 const TABS = [
-  { href: "/dashboard", label: "Now", Icon: BusIcon },
-  { href: "/ride", label: "Ride", Icon: RouteIcon },
-  { href: "/bookings", label: "Trips", Icon: TicketIcon },
-  { href: "/me", label: "Me", Icon: PersonIcon },
+  { href: "/dashboard", label: "Track", Icon: PinIcon },
+  { href: "/routes", label: "Routes", Icon: RouteIcon },
+  { href: "/pay", label: "Pay", Icon: TicketIcon },
 ] as const;
 
 /** Sub-pages belong to the tab they were opened from. */
 const OWNED_BY: Record<string, string> = {
   "/track": "/dashboard",
-  "/book": "/ride",
-  "/routes": "/ride",
-  "/company": "/me",
+  "/bookings": "/dashboard",
+  "/book": "/routes",
+  "/ride": "/routes",
 };
 
 export function RiderTabs() {

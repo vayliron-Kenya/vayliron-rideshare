@@ -5,7 +5,15 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { getSession, signIn, signOut } from "@/lib/auth";
-import { BookingError, cancelBooking, createBooking, getBooking } from "@/lib/queries";
+import { formatKes } from "@/lib/domain/fares";
+import {
+  BookingError,
+  cancelBooking,
+  createBooking,
+  getBooking,
+  PaymentError,
+  settlePayment,
+} from "@/lib/queries";
 
 /* ------------------------------------------------------------------ *
  * Session
@@ -84,4 +92,30 @@ export async function cancelBookingAction(formData: FormData): Promise<void> {
 
   revalidatePath("/bookings");
   revalidatePath("/dashboard");
+}
+
+/* ------------------------------------------------------------------ *
+ * Paying a fare
+ * ------------------------------------------------------------------ */
+
+export async function payFareAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const session = await getSession();
+  if (!session) return { error: "Your session expired. Sign in again to pay." };
+
+  const paymentId = String(formData.get("paymentId") ?? "");
+  const phone = String(formData.get("phone") ?? "");
+
+  let paid;
+  try {
+    paid = settlePayment(paymentId, session.employee.id, phone);
+  } catch (err) {
+    if (err instanceof PaymentError) return { error: err.message };
+    throw err;
+  }
+
+  revalidatePath("/pay");
+  revalidatePath("/bookings");
+  return {
+    message: `Paid ${formatKes(paid.amountKes)}. M-Pesa receipt ${paid.reference}.`,
+  };
 }

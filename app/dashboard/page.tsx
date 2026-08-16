@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AlertIcon, BusIcon, PinIcon } from "@/components/icons";
+import { LiveMap } from "@/components/live-map";
 import {
   Card,
   DirectionChip,
@@ -15,21 +16,23 @@ import { getSession } from "@/lib/auth";
 import { nextDeparturesFor } from "@/lib/commute";
 import { nextServiceDate } from "@/lib/domain/schedule";
 import { formatServiceDate, nairobiDate } from "@/lib/domain/time";
+import { buildPositionPayload } from "@/lib/position";
 import { listBookingsForEmployee } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Now" };
+export const metadata = { title: "Track" };
 
 /**
- * Tab 1 — Now.
+ * Tab 1 — Track.
  *
- * One question: when is my bus and where is it? The answer is the first and
- * largest thing on the screen, and nothing below it needs scrolling to act on.
- * If there is no bus booked, this tab says so and points at the Ride tab
- * rather than quietly showing an empty list.
+ * One question: where is my bus and how close is it getting? The countdown is
+ * the first and largest thing on the screen; once the bus is actually on the
+ * road the corridor is drawn underneath it with the bus on it, so "how close"
+ * stops being a number and becomes a picture. If there is nothing booked the
+ * tab says so and points at the Routes tab rather than showing an empty list.
  */
-export default async function NowPage() {
+export default async function TrackPage() {
   const session = await getSession();
   if (!session) redirect("/");
 
@@ -42,6 +45,8 @@ export default async function NowPage() {
     .sort((a, b) => a.trip.departsAt.getTime() - b.trip.departsAt.getTime());
 
   const next = upcoming.find((b) => b.trip.arrivesAt.getTime() > now.getTime());
+  const onTheRoad = next?.trip.trip.status === "in_transit";
+  const position = onTheRoad ? buildPositionPayload(next.trip.trip.id) : null;
 
   return (
     <div className="space-y-5">
@@ -77,10 +82,14 @@ export default async function NowPage() {
                 className="flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-white text-lg font-bold text-deep transition-transform active:scale-[0.98]"
               >
                 <PinIcon className="size-6" />
-                Where is my bus?
+                {onTheRoad ? "Follow it stage by stage" : "See the whole line"}
               </Link>
             </div>
           </HeroCard>
+
+          {/* Only drawn once the bus is actually moving — a corridor with a
+              stationary dot on it at 04:00 answers nothing. */}
+          {onTheRoad && position ? <LiveMap initial={position} highlightStopId={next.boardStop.id} /> : null}
 
           {next.trip.trip.delayMinutes > 0 ? (
             <Card className="flex items-start gap-3 border-amber/40 bg-amber-soft px-4 py-3.5">
@@ -195,7 +204,7 @@ async function NothingBooked({
     <EmptyTab
       icon={<BusIcon className="size-7" />}
       title="No bus booked"
-      cta={{ href: "/ride", label: next ? "Book the next one" : "Find a bus" }}
+      cta={{ href: "/routes", label: next ? "Catch the next one" : "See the lines" }}
     >
       {next
         ? `The next one on your commute leaves at ${next.trip.trip.departTime}.`

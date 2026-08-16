@@ -11,6 +11,7 @@ import {
 } from "@/app/drive-actions";
 import { ActionForm, Field, SelectField, TextAreaField } from "@/components/action-form";
 import { BoardingForm } from "@/components/boarding-form";
+import { CorridorStrip, DriverCue } from "@/components/driver-cue";
 import {
   Badge,
   BookingStatusBadge,
@@ -23,6 +24,14 @@ import {
   TripStatusBadge,
 } from "@/components/ui";
 import { getDriverSession, getOperatorSession } from "@/lib/auth";
+import {
+  departureCue,
+  nextDropoff,
+  nextPickup,
+  ownProgressPct,
+  siblingBuses,
+  stageCalls,
+} from "@/lib/dispatch";
 import { formatServiceDate, relativeMinutes } from "@/lib/domain/time";
 import { tripIncidents, tripStopEvents } from "@/lib/ops";
 import { getTrip, tripManifest } from "@/lib/queries";
@@ -77,6 +86,13 @@ export default async function DriveRunPage({ params }: PageProps) {
   const waiting = manifest.filter((m) => m.booking.status === "booked");
   const status = trip.trip.status;
   const finished = status === "completed" || status === "cancelled";
+
+  const stages = stageCalls(trip);
+  const cue = departureCue(trip, stages);
+  const pickup = nextPickup(stages);
+  const dropoff = nextDropoff(stages);
+  const others = siblingBuses(trip);
+  const myProgress = ownProgressPct(trip);
   const running = status === "in_transit";
 
   const byStop = trip.timetable
@@ -122,11 +138,25 @@ export default async function DriveRunPage({ params }: PageProps) {
         ) : null}
       </header>
 
+      {/* The four things a driver asks with the engine running: leave or hold,
+          where the next pick-up is, where the next set-down is, and where the
+          rest of the line has got to. */}
+      {!finished ? <DriverCue cue={cue} pickup={pickup} dropoff={dropoff} /> : null}
+
       <section className="grid grid-cols-3 gap-3">
         <Stat label="On board" value={boarded.length} tone="brand" />
         <Stat label="Expected" value={waiting.length} tone={waiting.length > 0 ? "amber" : "neutral"} />
         <Stat label="Seats" value={`${manifest.length}/${trip.trip.capacity}`} />
       </section>
+
+      {!finished ? (
+        <CorridorStrip
+          mine={myProgress}
+          others={others}
+          fromName={trip.timetable[0].name}
+          toName={trip.timetable[trip.timetable.length - 1].name}
+        />
+      ) : null}
 
       {!finished ? (
         <Card className="p-4 sm:p-5">

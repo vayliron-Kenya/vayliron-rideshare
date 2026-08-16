@@ -13,14 +13,15 @@ import { employerSpendThisMonth, listBookingsForEmployee } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Ride" };
+export const metadata = { title: "My commute" };
 
 /**
- * Tab 2 — Ride.
+ * Your own commute, reached from the Routes tab.
  *
- * The whole tab is one list: the departures that run between this rider's own
- * two stages, soonest first, each one a single tap away from being booked.
- * Every row carries the three things that decide it — when it leaves, what it
+ * The Routes tab answers "what is running"; this answers the narrower question
+ * a regular commuter actually has — "what is running between my two stages" —
+ * as one list, soonest first, each departure a single tap from being taken.
+ * Every row carries the three things that decide it: when it leaves, what it
  * costs *this* rider after their employer's share, and how full it is.
  */
 export default async function RidePage() {
@@ -54,7 +55,7 @@ export default async function RidePage() {
             href="/routes"
             className="min-h-11 shrink-0 self-center rounded-xl border-2 border-edge px-3.5 text-sm font-semibold leading-[2.4rem] text-body transition-colors hover:border-brand hover:text-accent"
           >
-            All routes
+            All lines
           </Link>
         }
       />

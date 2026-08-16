@@ -9,6 +9,7 @@ import {
   peakFactor,
   type TimetableEntry,
 } from "@/lib/domain/schedule";
+import { generateReceipt, normalisePhone, splitPayment } from "@/lib/domain/payments";
 import { nairobiInstant } from "@/lib/domain/time";
 import type {
   Booking,
@@ -18,6 +19,7 @@ import type {
   Employee,
   Incident,
   Operator,
+  Payment,
   Route,
   RouteStop,
   Stop,
@@ -535,6 +537,10 @@ export function createBooking(req: BookingRequest): BookingResult {
     throw new Error("could not allocate a unique boarding pass code");
   });
 
+  // The owner is owed for the place whether or not the rider turns up, so the
+  // charge is raised now rather than at the door.
+  chargeForBooking(booking.id as string);
+
   return { booking: toBooking(booking), split, trip };
 }
 
@@ -959,3 +965,261 @@ export function dailySpend(companyId: string, from: string, to: string): { date:
 }
 
 export { BusFullError };
+
+/* ------------------------------------------------------------------ *
+ * Paying for a ride
+ * ------------------------------------------------------------------ */
+
+export interface RiderPayment {
+  payment: Payment;
+  booking: Booking;
+  routeCode: string;
+  routeName: string;
+  boardStopName: string;
+  alightStopName: string;
+  serviceDate: string;
+  departTime: string;
+  plate: string;
+}
+
+const toPayment = (r: Row): Payment => ({
+  id: r.id as string,
+  bookingId: r.booking_id as string,
+  method: r.method as Payment["method"],
+  phone: (r.phone as string) ?? null,
+  amountKes: r.amount_kes as number,
+  ownerKes: r.owner_kes as number,
+  networkKes: r.network_kes as number,
+  status: r.status as Payment["status"],
+  reference: (r.reference as string) ?? null,
+  createdAt: r.created_at as string,
+  settledAt: (r.settled_at as string) ?? null,
+});
+
+const PAYMENT_SELECT = `
+  SELECT p.*, b.id AS b_id, b.trip_id, b.employee_id, b.board_stop_id, b.alight_stop_id,
+         b.seat_no, b.fare_kes, b.employer_kes, b.employee_kes, b.pass_code,
+         b.status AS b_status, b.created_at AS b_created_at, b.boarded_at,
+         r.code AS route_code, r.name AS route_name,
+         bs.name AS board_name, als.name AS alight_name,
+         t.service_date, t.depart_time, v.plate
+    FROM payments p
+    JOIN bookings b ON b.id = p.booking_id
+    JOIN trips t ON t.id = b.trip_id
+    JOIN routes r ON r.id = t.route_id
+    JOIN vehicles v ON v.id = t.vehicle_id
+    JOIN stops bs ON bs.id = b.board_stop_id
+    JOIN stops als ON als.id = b.alight_stop_id`;
+
+const toRiderPayment = (r: Row): RiderPayment => ({
+  payment: toPayment(r),
+  booking: toBooking({ ...r, id: r.b_id, status: r.b_status, created_at: r.b_created_at }),
+  routeCode: r.route_code as string,
+  routeName: r.route_name as string,
+  boardStopName: r.board_name as string,
+  alightStopName: r.alight_name as string,
+  serviceDate: r.service_date as string,
+  departTime: r.depart_time as string,
+  plate: r.plate as string,
+});
+
+/** Everything this rider has been charged for, newest first. */
+export function paymentsForEmployee(employeeId: string, limit = 40): RiderPayment[] {
+  return (
+    db()
+      .prepare(
+        `${PAYMENT_SELECT}
+          WHERE b.employee_id = ? AND b.status != 'cancelled'
+          ORDER BY t.service_date DESC, t.depart_time DESC
+          LIMIT ?`,
+      )
+      .all(employeeId, limit) as Row[]
+  ).map(toRiderPayment);
+}
+
+export function getRiderPayment(paymentId: string, employeeId: string): RiderPayment | null {
+  const row = db()
+    .prepare(`${PAYMENT_SELECT} WHERE p.id = ? AND b.employee_id = ?`)
+    .get(paymentId, employeeId) as Row | undefined;
+  return row ? toRiderPayment(row) : null;
+}
+
+export class PaymentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PaymentError";
+  }
+}
+
+/**
+ * Raises the charge for a booking.
+ *
+ * Called the moment a place is taken rather than when the rider gets on: the
+ * bus owner is owed for the place whether or not the rider shows up, and a
+ * payment row that only exists after boarding cannot be chased.
+ */
+export function chargeForBooking(bookingId: string): Payment {
+  return tx((conn) => {
+    const row = conn
+      .prepare(
+        `SELECT b.fare_kes, b.employee_kes, e.phone, o.payout_bps
+           FROM bookings b
+           JOIN trips t ON t.id = b.trip_id
+           JOIN vehicles v ON v.id = t.vehicle_id
+           JOIN employees e ON e.id = b.employee_id
+           LEFT JOIN owners o ON o.id = v.owner_id
+          WHERE b.id = ?`,
+      )
+      .get(bookingId) as Row | undefined;
+    if (!row) throw new PaymentError("That booking no longer exists.");
+
+    const split = splitPayment(row.fare_kes as number, (row.payout_bps as number) ?? 8500);
+    // Nothing is pushed to a phone when the employer covers the whole fare.
+    const method = (row.employee_kes as number) > 0 ? "mpesa" : "employer";
+    const id = `pay_${crypto.randomUUID().slice(0, 12)}`;
+
+    conn
+      .prepare(
+        `INSERT INTO payments
+           (id, booking_id, method, phone, amount_kes, owner_kes, network_kes, status,
+            reference, created_at, settled_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        bookingId,
+        method,
+        method === "mpesa" ? (row.phone as string) : null,
+        split.amountKes,
+        split.ownerKes,
+        split.networkKes,
+        // An employer-billed ride has nothing for the rider to do, so it is
+        // settled on the spot; an M-Pesa fare waits for the push.
+        method === "employer" ? "paid" : "pending",
+        null,
+        new Date().toISOString(),
+        method === "employer" ? new Date().toISOString() : null,
+      );
+
+    return toPayment(conn.prepare("SELECT * FROM payments WHERE id = ?").get(id) as Row);
+  });
+}
+
+/**
+ * Settles an M-Pesa charge.
+ *
+ * There are no Daraja credentials in this build, so no STK push actually
+ * leaves the box: this writes the receipt Safaricom's callback would have
+ * carried, and every screen that shows one says where it came from.
+ */
+export function settlePayment(paymentId: string, employeeId: string, phone: string): Payment {
+  const normalised = normalisePhone(phone);
+  if (!normalised) {
+    throw new PaymentError("That is not a Kenyan mobile number. It should look like 0712 345 678.");
+  }
+
+  return tx((conn) => {
+    const existing = conn
+      .prepare(
+        `SELECT p.* FROM payments p
+           JOIN bookings b ON b.id = p.booking_id
+          WHERE p.id = ? AND b.employee_id = ?`,
+      )
+      .get(paymentId, employeeId) as Row | undefined;
+    if (!existing) throw new PaymentError("We cannot find that fare.");
+    if (existing.status === "paid") throw new PaymentError("That fare is already paid.");
+
+    conn
+      .prepare(
+        `UPDATE payments SET status = 'paid', phone = ?, reference = ?, settled_at = ?
+          WHERE id = ?`,
+      )
+      .run(normalised, generateReceipt(), new Date().toISOString(), paymentId);
+
+    return toPayment(conn.prepare("SELECT * FROM payments WHERE id = ?").get(paymentId) as Row);
+  });
+}
+
+/** What this rider still owes, oldest first — the thing the Pay tab leads with. */
+export function unpaidFares(employeeId: string): RiderPayment[] {
+  return (
+    db()
+      .prepare(
+        `${PAYMENT_SELECT}
+          WHERE b.employee_id = ? AND p.status = 'pending' AND b.status != 'cancelled'
+          ORDER BY t.service_date, t.depart_time`,
+      )
+      .all(employeeId) as Row[]
+  ).map(toRiderPayment);
+}
+
+/* ------------------------------------------------------------------ *
+ * Live routes
+ * ------------------------------------------------------------------ */
+
+export interface LiveRoute {
+  route: Route;
+  /** Buses on the road right now. */
+  running: number;
+  /** Departures still to come today on either leg. */
+  upcoming: number;
+  /** The next one a rider could catch, in HH:MM, or null once the day is done. */
+  nextDepartTime: string | null;
+  nextTripId: string | null;
+  nextDirection: Direction | null;
+  worstDelayMinutes: number;
+  stops: number;
+}
+
+/**
+ * Which lines are alive right now.
+ *
+ * A rider standing at a stage does not want a timetable, they want to know
+ * which corridors have a bus moving on them and when the next one reaches
+ * them. "Running" is counted from trip status rather than from the clock so a
+ * departure held at the terminus does not read as being on the road.
+ */
+export function liveRoutes(serviceDate: string, now = new Date()): LiveRoute[] {
+  const nowMs = now.getTime();
+
+  return listRoutes().map((route) => {
+    const trips = [
+      ...listTrips({ serviceDate, routeId: route.id, direction: "inbound" }),
+      ...listTrips({ serviceDate, routeId: route.id, direction: "outbound" }),
+    ].filter((t) => t.trip.status !== "cancelled");
+
+    const running = trips.filter((t) => t.trip.status === "in_transit").length;
+    const ahead = trips
+      .filter((t) => t.departsAt.getTime() > nowMs && t.trip.status !== "completed")
+      .sort((a, b) => a.departsAt.getTime() - b.departsAt.getTime());
+
+    const next = ahead[0] ?? null;
+    const worstDelay = trips.reduce((worst, t) => Math.max(worst, t.trip.delayMinutes), 0);
+
+    return {
+      route,
+      running,
+      upcoming: ahead.length,
+      nextDepartTime: next?.trip.departTime ?? null,
+      nextTripId: next?.trip.id ?? null,
+      nextDirection: next?.trip.direction ?? null,
+      worstDelayMinutes: worstDelay,
+      stops: getRouteStops(route.id).length,
+    };
+  });
+}
+
+/**
+ * The departures on one line that a rider could still get on today, with the
+ * ones already moving first — that is the order they will actually reach a
+ * stage in.
+ */
+export function liveDepartures(routeId: string, serviceDate: string, now = new Date()) {
+  const nowMs = now.getTime();
+  return [
+    ...listTrips({ serviceDate, routeId, direction: "inbound" }),
+    ...listTrips({ serviceDate, routeId, direction: "outbound" }),
+  ]
+    .filter((t) => t.trip.status !== "cancelled" && t.arrivesAt.getTime() > nowMs)
+    .sort((a, b) => a.departsAt.getTime() - b.departsAt.getTime());
+}

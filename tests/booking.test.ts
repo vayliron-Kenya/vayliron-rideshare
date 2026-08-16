@@ -12,7 +12,11 @@ import {
   employerSpendThisMonth,
   getTrip,
   listBookingsForEmployee,
+  PaymentError,
+  paymentsForEmployee,
+  settlePayment,
   takenPlaces,
+  unpaidFares,
   tripManifest,
 } from "@/lib/queries";
 
@@ -369,5 +373,90 @@ describe("company reporting", () => {
     expect(metrics!.tripsTaken).toBe(0);
     expect(metrics!.employerKes).toBe(0);
     expect(metrics!.attendancePct).toBe(0);
+  });
+});
+
+describe("paying for a ride", () => {
+  // A 60% subsidy leaves the rider a real share to settle. On the default
+  // fixture the employer covers everything, which is a different path entirely
+  // and is checked at the end of this block.
+  beforeEach(() => reset({ subsidyBps: 6000 }));
+
+  it("raises a charge the moment a place is taken", () => {
+    const { booking } = bookFullLine("emp_1");
+    const [charge] = unpaidFares("emp_1");
+
+    expect(charge.payment.bookingId).toBe(booking.id);
+    expect(charge.payment.amountKes).toBe(booking.fareKes);
+    expect(charge.payment.status).toBe("pending");
+    expect(charge.payment.method).toBe("mpesa");
+  });
+
+  it("charges the whole fare, not just the rider's share", () => {
+    // The bus owner carried the person; who reimburses whom afterwards is
+    // between the rider and their employer.
+    const { booking } = bookFullLine("emp_1");
+    const [charge] = unpaidFares("emp_1");
+
+    expect(booking.employeeKes).toBeLessThan(booking.fareKes);
+    expect(charge.payment.amountKes).toBe(booking.fareKes);
+  });
+
+  it("splits the fare between the bus owner and the network", () => {
+    const { booking } = bookFullLine("emp_1");
+    const [charge] = unpaidFares("emp_1");
+
+    expect(charge.payment.ownerKes + charge.payment.networkKes).toBe(booking.fareKes);
+    expect(charge.payment.ownerKes).toBeGreaterThan(charge.payment.networkKes);
+  });
+
+  it("settles with a receipt and stops asking", () => {
+    bookFullLine("emp_1");
+    const [charge] = unpaidFares("emp_1");
+
+    const settled = settlePayment(charge.payment.id, "emp_1", "0712 345 678");
+    expect(settled.status).toBe("paid");
+    expect(settled.reference).toMatch(/^[A-Z0-9]{10}$/);
+    expect(settled.phone).toBe("254712345678");
+    expect(unpaidFares("emp_1")).toHaveLength(0);
+  });
+
+  it("refuses a number no push could reach", () => {
+    bookFullLine("emp_1");
+    const [charge] = unpaidFares("emp_1");
+    expect(() => settlePayment(charge.payment.id, "emp_1", "12345")).toThrow(PaymentError);
+    expect(unpaidFares("emp_1")).toHaveLength(1);
+  });
+
+  it("will not let one rider settle another's fare", () => {
+    bookFullLine("emp_1");
+    const [charge] = unpaidFares("emp_1");
+    expect(() => settlePayment(charge.payment.id, "emp_2", "0712345678")).toThrow(PaymentError);
+    expect(unpaidFares("emp_1")).toHaveLength(1);
+  });
+
+  it("cannot be paid twice", () => {
+    bookFullLine("emp_1");
+    const [charge] = unpaidFares("emp_1");
+    settlePayment(charge.payment.id, "emp_1", "0712345678");
+    expect(() => settlePayment(charge.payment.id, "emp_1", "0712345678")).toThrow(PaymentError);
+  });
+
+  it("keeps a cancelled booking off the rider's bill", () => {
+    const { booking } = bookFullLine("emp_1");
+    expect(unpaidFares("emp_1")).toHaveLength(1);
+    cancelBooking(booking.id, "emp_1");
+    expect(unpaidFares("emp_1")).toHaveLength(0);
+  });
+
+  it("asks a fully subsidised rider for nothing at all", () => {
+    reset({ subsidyBps: 10000 });
+    bookFullLine("emp_1");
+
+    expect(unpaidFares("emp_1")).toHaveLength(0);
+    const [charged] = paymentsForEmployee("emp_1");
+    expect(charged.payment.method).toBe("employer");
+    expect(charged.payment.status).toBe("paid");
+    expect(charged.payment.phone).toBeNull();
   });
 });
