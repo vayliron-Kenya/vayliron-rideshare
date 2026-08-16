@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { signOutAction } from "@/app/actions";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export interface NavProps {
   kind: "employee" | "driver" | "operator" | null;
@@ -101,6 +102,7 @@ export function AppNav(props: NavProps) {
         ) : null}
 
         <div className="ml-auto flex shrink-0 items-center gap-3">
+          <ThemeToggle />
           {props.kind ? (
             <>
               <div className="hidden text-right sm:block">

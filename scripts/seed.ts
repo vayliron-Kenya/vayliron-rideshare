@@ -92,7 +92,18 @@ const SURNAMES = [
  * -------------------------------------------------------------- */
 
 const DB_PATH = process.env.VAYLIRON_DB ?? path.join(process.cwd(), "data", "vayliron.db");
-if (DB_PATH !== ":memory:") fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+if (DB_PATH !== ":memory:") {
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+
+  // A WAL database is three files. Deleting only the main one and then opening
+  // a fresh database next to the stale sidecars fails with a short-read I/O
+  // error, so if the database is gone the write-ahead log goes with it.
+  if (!fs.existsSync(DB_PATH)) {
+    for (const sidecar of ["-wal", "-shm"]) {
+      fs.rmSync(`${DB_PATH}${sidecar}`, { force: true });
+    }
+  }
+}
 
 const conn = new Database(DB_PATH);
 conn.pragma("journal_mode = WAL");

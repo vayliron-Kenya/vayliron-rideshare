@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { AppNav } from "@/components/app-nav";
+import { THEME_SCRIPT } from "@/components/theme-toggle";
 import { displayName, displayOrg, getPrincipal } from "@/lib/auth";
 
 import "./globals.css";
@@ -28,7 +29,11 @@ export default async function RootLayout({
   const principal = await getPrincipal();
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Applies a pinned theme before first paint, so it never flashes. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="font-sans antialiased">
         <AppNav
           kind={principal?.kind ?? null}

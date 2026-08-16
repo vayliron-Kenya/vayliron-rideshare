@@ -77,12 +77,16 @@
 }
 
 /*
- * Dark mode redefines the same custom properties on :root rather than opening
- * a second @theme block — Tailwind only reads @theme at the top level, and a
- * nested one leaks its values into every mode.
+ * Dark mode redefines the same custom properties rather than opening a second
+ * @theme block — Tailwind only reads @theme at the top level, and a nested one
+ * leaks its values into every mode.
+ *
+ * Three states, in this order: follow the system unless the reader has pinned
+ * light, then honour an explicit dark choice. The block is written twice
+ * because CSS has no way to share one declaration list between two selectors.
  */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --color-ink: #0b0022;
     --color-surface: #150a33;
     --color-raised: #1e1140;
@@ -112,8 +116,47 @@
   }
 }
 
+:root[data-theme="dark"] {
+    --color-ink: #0b0022;
+    --color-surface: #150a33;
+    --color-raised: #1e1140;
+    --color-line: #2c2150;
+    --color-edge: #382a60;
+
+    --color-body: #ffffff;
+    --color-muted: #a6a6a6;
+    --color-faint: #7f7996;
+
+    --color-brand: #c947ff;
+    --color-brand-hover: #d873ff;
+    --color-brand-bright: #e9b3ff;
+    --color-brand-soft: #2b1145;
+    --color-deep: #010134;
+    --color-on-brand: #12002c;
+    --color-accent: #e9b3ff;
+
+    --color-amber: #ecb238;
+    --color-amber-soft: #33260f;
+    --color-amber-vivid: #ecb238;
+    --color-flame: #ff8367;
+    --color-flame-soft: #3a1a12;
+    --color-flame-vivid: #ff8367;
+    --color-sky: #47a1e5;
+    --color-sky-soft: #10243a;
+}
+
 html {
-  color-scheme: light dark;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+  }
 }
 
 body {

@@ -59,8 +59,9 @@ async function main() {
   check("a rider email opens the rider app", page.url().includes("/dashboard"));
   await page.screenshot({ path: path.join(SHOTS, "02-dashboard.png"), fullPage: true });
 
-  // `exact` matters: without it this also matches the "Booked" state link.
-  const bookLink = () => page.getByRole("link", { name: "Book", exact: true }).first();
+  // Matched by destination, not by label: the rider screens use big plain-language
+  // rows rather than a button that literally says "Book".
+  const bookLink = () => page.locator('a[href^="/book/"]').first();
   const onDashboard = (await bookLink().count()) > 0;
   if (!onDashboard) {
     await page.goto(`${BASE}/routes/mombasa-road-express`, { waitUntil: "networkidle" });
@@ -75,14 +76,26 @@ async function main() {
 
   await bookLink().click();
   await page.waitForURL("**/book/**", { timeout: 15000 });
-  await page.waitForSelector("#board");
-  check("fare quote is shown before booking", await page.getByText(/You pay/).first().isVisible());
-  await page.screenshot({ path: path.join(SHOTS, "03-booking.png"), fullPage: true });
+
+  // Arriving from the rider's own commute answers the first two questions, so
+  // the seat step is already open. Coming in cold, answer them.
+  if (await page.locator('button[name="pick-board"]').count()) {
+    await page.locator('button[name="pick-board"]').first().click();
+    await page.locator('button[name="pick-alight"]').first().click();
+  }
+  await page.getByText("Which seat do you want?").first().waitFor({ timeout: 15000 });
 
   const freeSeat = page.locator('button[aria-label^="Seat "]').first();
   const seatLabel = await freeSeat.getAttribute("aria-label");
   await freeSeat.click();
-  await page.getByRole("button", { name: /Confirm seat/ }).click();
+
+  check(
+    "the fare is spelled out before booking",
+    await page.getByText("What this costs you").first().isVisible(),
+  );
+  await page.screenshot({ path: path.join(SHOTS, "03-booking.png"), fullPage: true });
+
+  await page.getByRole("button", { name: /Book my seat/ }).click();
   await page.waitForURL("**/bookings**", { timeout: 15000 });
   check("confirming a seat lands on the rider's trips", page.url().includes("/bookings"), seatLabel ?? "");
 
@@ -97,7 +110,7 @@ async function main() {
   );
   await page.screenshot({ path: path.join(SHOTS, "04-bookings.png"), fullPage: true });
 
-  await row.getByRole("link", { name: "Track" }).click();
+  await row.getByRole("link", { name: /Where is my bus\?/ }).click();
   await page.waitForURL("**/track/**", { timeout: 15000 });
   check("live map renders the corridor", (await page.locator("svg polyline").count()) > 0);
   await page.screenshot({ path: path.join(SHOTS, "05-tracking.png"), fullPage: true });

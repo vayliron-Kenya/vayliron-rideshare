@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { BookingForm, type StopOption } from "@/components/booking-form";
-import { Badge, Card, DirectionBadge, EmptyState, TripStatusBadge } from "@/components/ui";
+import { BookingFlow, type StopOption } from "@/components/booking-flow";
+import { AlertIcon, HomeIcon, SeatIcon, WorkIcon } from "@/components/icons";
+import { BigButton, Notice } from "@/components/simple";
 import { getSession } from "@/lib/auth";
-import { formatServiceDate, nairobiDate, relativeMinutes } from "@/lib/domain/time";
+import { formatServiceDate, nairobiDate } from "@/lib/domain/time";
 import { employerSpendThisMonth, getTrip, takenSeats } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -58,82 +59,74 @@ export default async function BookPage({ params, searchParams }: PageProps) {
   const minutesToDeparture = (trip.departsAt.getTime() - Date.now()) / 60000;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-8">
       <header>
         <Link
-          href={`/routes/${trip.route.slug}`}
-          className="text-xs text-faint transition-colors hover:text-body"
+          href="/dashboard"
+          className="inline-flex min-h-11 items-center text-base text-muted transition-colors hover:text-body"
         >
-          ← {trip.route.code} {trip.route.name}
+          ← Back
         </Link>
 
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="tabular text-2xl font-semibold tracking-tight text-body">
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="tabular text-4xl font-bold tracking-tight text-body">
             {trip.trip.departTime}
           </h1>
-          <span className="text-sm text-muted">{formatServiceDate(trip.trip.serviceDate)}</span>
-          <DirectionBadge direction={trip.trip.direction} />
-          <TripStatusBadge status={trip.trip.status} />
-          {minutesToDeparture > 0 ? (
-            <Badge tone="sky">Departs {relativeMinutes(minutesToDeparture)}</Badge>
-          ) : null}
+          <p className="text-lg text-muted">{formatServiceDate(trip.trip.serviceDate)}</p>
         </div>
 
-        <p className="mt-2 text-sm text-muted">
-          {trip.vehicle.model} · {trip.vehicle.plate} · {trip.trip.capacity} seats ·{" "}
-          {trip.vehicle.wifi ? "Wi-Fi on board" : "No Wi-Fi"} · Driver {trip.driver.name} (
-          {(trip.driver.ratingBps / 1000).toFixed(1)}★) · Traffic factor ×
-          {trip.peakFactor.toFixed(2)}
+        <p className="mt-2 flex items-center gap-2 text-lg text-body">
+          {trip.trip.direction === "inbound" ? (
+            <WorkIcon className="size-5 shrink-0 text-muted" />
+          ) : (
+            <HomeIcon className="size-5 shrink-0 text-muted" />
+          )}
+          {trip.trip.direction === "inbound" ? "Going to work" : "Going home"}
+          <span className="text-muted">·</span>
+          <span className="text-muted">{trip.route.name}</span>
         </p>
       </header>
 
       {closed ? (
-        <EmptyState
-          title="This departure has closed"
-          body="Bookings shut when the bus leaves its first stage. Pick a later departure on this line."
-          action={
-            <Link
-              href={`/routes/${trip.route.slug}`}
-              className="inline-flex rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-on-brand"
-            >
-              See later departures
-            </Link>
-          }
-        />
+        <>
+          <Notice
+            tone="bad"
+            icon={<AlertIcon className="size-6" />}
+            title="This bus has already left"
+          >
+            You can still book a later one on the same route.
+          </Notice>
+          <BigButton href={`/routes/${trip.route.slug}`} tone="quiet">
+            See later buses
+          </BigButton>
+        </>
       ) : trip.seatsAvailable === 0 ? (
-        <EmptyState
-          title="Fully booked"
-          body={`All ${trip.trip.capacity} seats on ${trip.vehicle.plate} are taken. Try the next departure on this line.`}
-          action={
-            <Link
-              href={`/routes/${trip.route.slug}`}
-              className="inline-flex rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-on-brand"
-            >
-              See later departures
-            </Link>
-          }
-        />
+        <>
+          <Notice tone="bad" icon={<AlertIcon className="size-6" />} title="This bus is full">
+            All {trip.trip.capacity} seats are taken. Try a later bus on the same route.
+          </Notice>
+          <BigButton href={`/routes/${trip.route.slug}`} tone="quiet">
+            See later buses
+          </BigButton>
+        </>
       ) : (
         <>
-          <Card className="px-5 py-3">
-            <p className="text-xs text-muted">
-              <span className="tabular font-semibold text-accent">
-                {trip.seatsAvailable}
-              </span>{" "}
-              of {trip.trip.capacity} seats still free ·{" "}
-              {trip.timetable[0].name} {trip.timetable[0].time} →{" "}
-              {trip.timetable[trip.timetable.length - 1].name}{" "}
-              {trip.timetable[trip.timetable.length - 1].time}
-            </p>
-          </Card>
+          <Notice
+            tone="good"
+            icon={<SeatIcon className="size-6" />}
+            title={`${trip.seatsAvailable} seats still free`}
+          >
+            Answer the questions below and the seat is yours.
+          </Notice>
 
-          <BookingForm
+          <BookingFlow
             tripId={trip.trip.id}
             capacity={trip.trip.capacity}
             takenSeats={taken}
             stops={stops}
             defaultBoardId={defaultBoard.id}
             defaultAlightId={defaultAlight.id}
+            prefilled={Boolean(query.board && query.alight) && defaultBoard.seq < defaultAlight.seq}
             subsidyBps={session.company.subsidyBps}
             monthlyCapKes={session.company.monthlyCapKes}
             monthToDateKes={employerSpendThisMonth(

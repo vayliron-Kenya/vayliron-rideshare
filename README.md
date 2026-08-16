@@ -50,6 +50,18 @@ so the same network comes back every time.
 
 ### Rider
 
+The rider screens are deliberately plainer than the rest of the app. A commuter
+is standing at a stage in the dark, often on a cheap phone, sometimes handing it
+to a child to read the time, and not necessarily reading English quickly. So
+those screens follow three rules: one obvious thing to do per screen as a
+full-width button; touch targets of at least 56px; and labels you would say out
+loud — "Where do you get on?", not "Boarding stage". Icons always accompany a
+word rather than replacing it, and no state is signalled by colour alone.
+
+Booking is three questions asked one at a time, each collapsing to a single line
+with a Change link once answered, so there is never more than one decision on
+screen. Arriving from your own commute answers the first two, leaving one tap.
+
 `/dashboard` shows the next trip with a live countdown and boarding pass,
 month-to-date spend, and departures that serve both their home stage and their
 workplace — rolling forward to the next day with buses on it rather than showing
@@ -121,9 +133,17 @@ Two deliberate departures, both about legibility rather than taste:
   is how badges here use them. The raw values are kept as `-vivid` tokens for
   meters and graphics, and dark mode restores them everywhere.
 
-The site is light-first with a `.dark` class, so this app is light by default
-and follows the reader's system setting into dark. Every colour lives in
-`app/globals.css`; no component hard-codes one.
+The site is light-first with a `.dark` class, so this app is light by default.
+The theme control in the header has three states — light, dark, and follow the
+system — and a pinned choice is applied before first paint so it never flashes
+the wrong one. Every colour lives in `app/globals.css`; no component hard-codes
+one.
+
+The control panels do **not** follow those rules. A controller triaging a
+morning peak and a finance admin reconciling an invoice need density — sortable
+tables, many numbers in view at once — and making those screens childlike would
+make them worse at their job. They inherit the palette and the type scale, and
+stop there.
 
 **Gilmer** is Vayliron's typeface. It is commercially licensed, so it is
 declared first in the font stack and used wherever an installation has it,
