@@ -25,6 +25,7 @@ function linksFor(props: NavProps): NavLink[] {
     const links: NavLink[] = [
       { href: "/ops", label: "Board" },
       { href: "/ops/trips", label: "Departures" },
+      { href: "/ops/approvals", label: "Approvals" },
       { href: "/ops/fleet", label: "Fleet" },
       { href: "/ops/clients", label: "Clients" },
       { href: "/ops/audit", label: "Audit" },

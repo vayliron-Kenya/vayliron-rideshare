@@ -13,6 +13,7 @@ import {
   TripStatusBadge,
 } from "@/components/ui";
 import { getOperatorSession } from "@/lib/auth";
+import { pendingVehicles } from "@/lib/owners";
 import { formatKes } from "@/lib/domain/fares";
 import { nextServiceDate } from "@/lib/domain/schedule";
 import { formatServiceDate, nairobiDate, relativeMinutes } from "@/lib/domain/time";
@@ -41,6 +42,7 @@ export default async function OpsBoardPage() {
   const now = Date.now();
 
   const snapshot = networkSnapshot(serviceDate);
+  const waiting = pendingVehicles();
   const lines = lineStatus(serviceDate);
   const incidents = listIncidents({ openOnly: true, limit: 12 });
 
@@ -107,6 +109,30 @@ export default async function OpsBoardPage() {
           }
         />
       </section>
+
+      {waiting.length > 0 ? (
+        <Link
+          href="/ops/approvals"
+          className="flex items-center gap-4 rounded-2xl border border-amber/40 bg-amber-soft px-5 py-4 transition-colors hover:border-amber"
+        >
+          <span className="tabular text-3xl font-bold leading-none text-amber">
+            {waiting.length}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-amber">
+              {waiting.length === 1 ? "A bus is" : "Buses are"} waiting on us
+            </span>
+            <span className="block truncate text-xs text-amber/80">
+              {waiting
+                .slice(0, 3)
+                .map((v) => `${v.plate} (${v.ownerName})`)
+                .join(" · ")}
+              {waiting.length > 3 ? ` and ${waiting.length - 3} more` : ""}
+            </span>
+          </span>
+          <span className="shrink-0 text-sm font-semibold text-amber">Review →</span>
+        </Link>
+      ) : null}
 
       {incidents.length > 0 ? (
         <Card>

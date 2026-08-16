@@ -31,13 +31,15 @@ export function Badge({
 export function Card({
   children,
   className = "",
+  ...rest
 }: {
   children: ReactNode;
   className?: string;
-}) {
+} & Record<`data-${string}`, string | undefined>) {
   return (
     <div
       className={`rounded-2xl border border-line bg-surface/80 backdrop-blur-sm ${className}`}
+      {...rest}
     >
       {children}
     </div>

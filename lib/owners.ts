@@ -293,17 +293,33 @@ export function savePhoto(
   });
 }
 
-/** Reads a photograph back for the viewer route. */
-export function readPhoto(photoId: string): { mime: string; data: Buffer } | null {
+/**
+ * Reads a photograph back for the viewer route.
+ *
+ * Returns the owning account alongside the bytes: these are logbooks and
+ * number plates, so the route has to be able to check that the person asking
+ * is the owner who uploaded it, not merely some owner.
+ */
+export function readPhoto(
+  photoId: string,
+): { mime: string; data: Buffer; ownerId: string | null } | null {
   const row = db()
-    .prepare("SELECT mime, filename FROM vehicle_photos WHERE id = ?")
+    .prepare(
+      `SELECT p.mime, p.filename, v.owner_id
+         FROM vehicle_photos p JOIN vehicles v ON v.id = p.vehicle_id
+        WHERE p.id = ?`,
+    )
     .get(photoId) as Row | undefined;
   if (!row) return null;
 
   const file = path.join(PHOTO_DIR, row.filename as string);
   if (!fs.existsSync(file)) return null;
 
-  return { mime: row.mime as string, data: fs.readFileSync(file) };
+  return {
+    mime: row.mime as string,
+    data: fs.readFileSync(file),
+    ownerId: (row.owner_id as string) ?? null,
+  };
 }
 
 function removeFile(filename: string): void {

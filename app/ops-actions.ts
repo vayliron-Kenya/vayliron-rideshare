@@ -6,6 +6,13 @@ import { z } from "zod";
 import type { FormState } from "@/app/actions";
 import type { Actor } from "@/lib/audit";
 import { getNetworkAdmin, getOperatorSession } from "@/lib/auth";
+import {
+  approveVehicle,
+  OwnerError,
+  reinstateVehicle,
+  rejectVehicle,
+  suspendVehicle,
+} from "@/lib/owners";
 import type { Operator } from "@/lib/types";
 import {
   cancelTrip,
@@ -292,4 +299,103 @@ export async function updateContractAction(
   refreshOps();
   revalidatePath("/company");
   return { message: "Contract updated. It applies to bookings made from now on." };
+}
+
+/* ------------------------------------------------------------------ *
+ * Vehicle approvals
+ *
+ * The network does not own its buses, so letting one carry people is a real
+ * decision made by a named person against photographs. Every outcome here is
+ * audited, and a rejection has to say why — an owner who is told "no" with no
+ * reason cannot fix anything.
+ * ------------------------------------------------------------------ */
+
+export async function approveVehicleAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const operator = await getOperatorSession();
+  if (!operator) return { error: "Your session expired. Sign in again." };
+
+  try {
+    approveVehicle(String(formData.get("vehicleId") ?? ""), asActor(operator));
+  } catch (err) {
+    if (err instanceof OwnerError) return { error: err.message };
+    throw err;
+  }
+
+  refreshApprovals();
+  return { message: "Approved. That bus can be rostered from now on." };
+}
+
+export async function rejectVehicleAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const operator = await getOperatorSession();
+  if (!operator) return { error: "Your session expired. Sign in again." };
+
+  try {
+    rejectVehicle(
+      String(formData.get("vehicleId") ?? ""),
+      String(formData.get("reason") ?? ""),
+      asActor(operator),
+    );
+  } catch (err) {
+    if (err instanceof OwnerError) return { error: err.message };
+    throw err;
+  }
+
+  refreshApprovals();
+  return { message: "Turned down. The owner sees your reason on their own screen." };
+}
+
+export async function suspendVehicleAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const operator = await getNetworkAdmin();
+  if (!operator) return { error: "Only a network admin can pull a bus off the network." };
+
+  try {
+    suspendVehicle(
+      String(formData.get("vehicleId") ?? ""),
+      String(formData.get("reason") ?? ""),
+      asActor(operator),
+    );
+  } catch (err) {
+    if (err instanceof OwnerError) return { error: err.message };
+    throw err;
+  }
+
+  refreshApprovals();
+  return {
+    message:
+      "Suspended. Departures already rostered on it are untouched — move those from the departure screen.",
+  };
+}
+
+export async function reinstateVehicleAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const operator = await getNetworkAdmin();
+  if (!operator) return { error: "Only a network admin can put a bus back on the network." };
+
+  try {
+    reinstateVehicle(String(formData.get("vehicleId") ?? ""), asActor(operator));
+  } catch (err) {
+    if (err instanceof OwnerError) return { error: err.message };
+    throw err;
+  }
+
+  refreshApprovals();
+  return { message: "Back on the network." };
+}
+
+function refreshApprovals(): void {
+  revalidatePath("/ops");
+  revalidatePath("/ops/approvals");
+  revalidatePath("/ops/fleet");
+  revalidatePath("/fleet");
 }
