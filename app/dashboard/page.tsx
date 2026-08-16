@@ -118,9 +118,6 @@ export default async function DashboardPage() {
               <p className="mt-1 font-mono text-4xl font-bold tracking-[0.2em] text-body">
                 {nextTrip.booking.passCode}
               </p>
-              <p className="tabular mt-1 text-base text-muted">
-                Seat {nextTrip.booking.seatNo}
-              </p>
             </div>
 
             <BigButton

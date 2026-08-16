@@ -1,5 +1,6 @@
 import { record, type Actor } from "@/lib/audit";
 import { db, tx } from "@/lib/db";
+import { BusFullError, generatePassCode, nextFreePlace } from "@/lib/domain/boarding";
 import { fareForKm, splitFare, type FareSplit } from "@/lib/domain/fares";
 import {
   buildTimetable,
@@ -8,7 +9,6 @@ import {
   peakFactor,
   type TimetableEntry,
 } from "@/lib/domain/schedule";
-import { generatePassCode, nextFreeSeat, TripFullError } from "@/lib/domain/seats";
 import { nairobiInstant } from "@/lib/domain/time";
 import type {
   Booking,
@@ -78,7 +78,7 @@ const toBooking = (r: Row): Booking => ({
   employeeId: r.employee_id as string,
   boardStopId: r.board_stop_id as string,
   alightStopId: r.alight_stop_id as string,
-  seatNo: r.seat_no as number,
+  place: r.seat_no as number,
   fareKes: r.fare_kes as number,
   employerKes: r.employer_kes as number,
   employeeKes: r.employee_kes as number,
@@ -394,7 +394,8 @@ export function commuteMatches(fromStopId: string, toStopId: string): CommuteMat
   return matches;
 }
 
-export function takenSeats(tripId: string): number[] {
+/** Internal capacity slots in use — never shown, only counted. */
+export function takenPlaces(tripId: string): number[] {
   return db()
     .prepare(
       "SELECT seat_no FROM bookings WHERE trip_id = ? AND status IN ('booked','boarded') ORDER BY seat_no",
@@ -414,7 +415,6 @@ export class BookingError extends Error {
       | "trip_not_found"
       | "trip_closed"
       | "invalid_stops"
-      | "seat_taken"
       | "trip_full"
       | "already_booked",
   ) {
@@ -428,8 +428,6 @@ export interface BookingRequest {
   employeeId: string;
   boardStopId: string;
   alightStopId: string;
-  /** Omit to be given the lowest free seat. */
-  seatNo?: number;
 }
 
 export interface BookingResult {
@@ -482,25 +480,9 @@ export function createBooking(req: BookingRequest): BookingResult {
   });
 
   const booking = tx((conn) => {
-    const taken = takenSeats(req.tripId);
-    if (taken.length >= trip.trip.capacity) throw new BookingError("Departure is full", "trip_full");
-
-    let seatNo: number;
-    if (req.seatNo === undefined) {
-      seatNo = nextFreeSeat(trip.trip.capacity, taken);
-    } else {
-      if (
-        !Number.isInteger(req.seatNo) ||
-        req.seatNo < 1 ||
-        req.seatNo > trip.trip.capacity
-      ) {
-        throw new BookingError("That seat does not exist on this bus", "seat_taken");
-      }
-      if (taken.includes(req.seatNo)) {
-        throw new BookingError("That seat has just been taken", "seat_taken");
-      }
-      seatNo = req.seatNo;
-    }
+    const taken = takenPlaces(req.tripId);
+    if (taken.length >= trip.trip.capacity) throw new BookingError("This bus is full", "trip_full");
+    const place = nextFreePlace(trip.trip.capacity, taken);
 
     const id = `bkg_${crypto.randomUUID().slice(0, 12)}`;
     const createdAt = new Date().toISOString();
@@ -512,7 +494,7 @@ export function createBooking(req: BookingRequest): BookingResult {
     );
 
     // The partial unique indexes are the real guard against two riders racing
-    // for the same seat, so their violations are translated here rather than
+    // for the last place, so their violations are translated here rather than
     // trusted to the pre-flight checks above. A pass-code clash is the only
     // one worth retrying.
     for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -523,7 +505,7 @@ export function createBooking(req: BookingRequest): BookingResult {
           req.employeeId,
           req.boardStopId,
           req.alightStopId,
-          seatNo,
+          place,
           split.fareKes,
           split.employerKes,
           split.employeeKes,
@@ -534,10 +516,11 @@ export function createBooking(req: BookingRequest): BookingResult {
       } catch (err) {
         const message = (err as Error).message;
         if (message.includes("employee_id")) {
-          throw new BookingError("You already hold a seat on this departure", "already_booked");
+          throw new BookingError("You are already booked on this departure", "already_booked");
         }
         if (message.includes("seat_no")) {
-          throw new BookingError("That seat has just been taken", "seat_taken");
+          // Someone took the last place between the count above and this insert.
+          throw new BookingError("This bus just filled up", "trip_full");
         }
         if (!message.includes("pass_code")) throw err;
       }
@@ -647,7 +630,7 @@ export function tripManifest(tripId: string): ManifestEntry[] {
          JOIN employees e ON e.id = b.employee_id
          JOIN companies c ON c.id = e.company_id
         WHERE b.trip_id = ? AND b.status IN ('booked','boarded')
-        ORDER BY b.seat_no`,
+        ORDER BY e.name`,
     )
     .all(tripId)
     .map((raw) => {
@@ -968,4 +951,4 @@ export function dailySpend(companyId: string, from: string, to: string): { date:
   }));
 }
 
-export { TripFullError };
+export { BusFullError };

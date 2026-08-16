@@ -42,7 +42,6 @@ const bookingSchema = z.object({
   tripId: z.string().min(1),
   boardStopId: z.string().min(1),
   alightStopId: z.string().min(1),
-  seatNo: z.coerce.number().int().positive().optional(),
 });
 
 export async function bookSeatAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -53,7 +52,6 @@ export async function bookSeatAction(_prev: FormState, formData: FormData): Prom
     tripId: formData.get("tripId"),
     boardStopId: formData.get("boardStopId"),
     alightStopId: formData.get("alightStopId"),
-    seatNo: formData.get("seatNo") || undefined,
   });
   if (!parsed.success) return { error: "That booking request was incomplete. Try again." };
 
@@ -64,7 +62,6 @@ export async function bookSeatAction(_prev: FormState, formData: FormData): Prom
       employeeId: session.employee.id,
       boardStopId: parsed.data.boardStopId,
       alightStopId: parsed.data.alightStopId,
-      seatNo: parsed.data.seatNo,
     });
     bookingId = result.booking.id;
   } catch (err) {

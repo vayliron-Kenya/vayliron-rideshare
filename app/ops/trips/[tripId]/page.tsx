@@ -186,7 +186,6 @@ export default async function OpsTripPage({ params }: PageProps) {
                 <table className="w-full min-w-[36rem] text-sm">
                   <thead className="sticky top-0 bg-surface">
                     <tr className="border-b border-line text-left text-xs uppercase tracking-wider text-faint">
-                      <th className="px-5 py-2.5 font-medium">Seat</th>
                       <th className="px-5 py-2.5 font-medium">Rider</th>
                       <th className="px-5 py-2.5 font-medium">Client</th>
                       <th className="px-5 py-2.5 font-medium">Leg</th>
@@ -196,9 +195,6 @@ export default async function OpsTripPage({ params }: PageProps) {
                   <tbody className="divide-y divide-line">
                     {manifest.map((entry) => (
                       <tr key={entry.booking.id} className="text-muted">
-                        <td className="tabular px-5 py-2.5 font-medium text-body">
-                          {entry.booking.seatNo}
-                        </td>
                         <td className="px-5 py-2.5">
                           <span className="text-body">{entry.employee.name}</span>
                           <span className="ml-2 text-xs text-faint">{entry.employee.phone}</span>

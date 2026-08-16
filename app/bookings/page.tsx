@@ -162,7 +162,6 @@ function TicketCard({
           <p className="mt-1 font-mono text-4xl font-bold tracking-[0.2em] text-body">
             {booking.passCode}
           </p>
-          <p className="tabular mt-1 text-base text-muted">Seat {booking.seatNo}</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">

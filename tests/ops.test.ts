@@ -25,7 +25,15 @@ import {
   tripStopEvents,
   updateCompanyPolicy,
 } from "@/lib/ops";
-import { boardByPassCode, closeTrip, createBooking, getTrip, takenSeats } from "@/lib/queries";
+import {
+  boardByPassCode,
+  cancelBooking,
+  closeTrip,
+  createBooking,
+  getTrip,
+  takenPlaces,
+  tripManifest,
+} from "@/lib/queries";
 import type { RouteStop } from "@/lib/types";
 
 const CONTROLLER: Actor = { kind: "operator", id: "opr_1", name: "Naliaka Wekesa" };
@@ -129,13 +137,12 @@ function reset() {
   trip.run(BIG_TRIP_ID, "rte_t", "inbound", SERVICE_DATE, "07:00", "veh_big", "drv_2", 49, "scheduled");
 }
 
-const book = (employeeId: string, tripId = TRIP_ID, seatNo?: number) =>
+const book = (employeeId: string, tripId = TRIP_ID) =>
   createBooking({
     tripId,
     employeeId,
     boardStopId: "stp_a",
     alightStopId: "stp_c",
-    seatNo,
   });
 
 describe("cancelling a departure", () => {
@@ -150,7 +157,7 @@ describe("cancelling a departure", () => {
     const trip = getTrip(TRIP_ID)!;
     expect(trip.trip.status).toBe("cancelled");
     expect(trip.trip.cancelReason).toBe("Breakdown at Ruiru");
-    expect(takenSeats(TRIP_ID)).toEqual([]);
+    expect(takenPlaces(TRIP_ID)).toEqual([]);
   });
 
   it("takes the trip off the riders' upcoming list rather than stranding them", () => {
@@ -197,14 +204,25 @@ describe("reassigning a departure", () => {
     book("emp_2");
     book("emp_3");
 
-    expect(() => reassignVehicle(TRIP_ID, "veh_tiny", CONTROLLER)).toThrow(/3 seats are already sold/);
+    expect(() => reassignVehicle(TRIP_ID, "veh_tiny", CONTROLLER)).toThrow(
+      /3 riders are already booked/,
+    );
     expect(getTrip(TRIP_ID)!.trip.capacity).toBe(4);
   });
 
-  it("refuses a replacement where a sold seat number does not exist", () => {
-    // Only one rider, but they hold seat 4 — which a two-seater does not have.
-    book("emp_1", TRIP_ID, 4);
-    expect(() => reassignVehicle(TRIP_ID, "veh_tiny", CONTROLLER)).toThrow(/Seat 4 is sold/);
+  it("closes gaps left by cancellations so a smaller bus still fits", () => {
+    // Four riders fill the bus, then the first two drop out. The remaining two
+    // hold places 3 and 4, which a two-seater does not have — until we compact.
+    const first = book("emp_1");
+    const second = book("emp_2");
+    book("emp_3");
+    book("emp_4");
+    cancelBooking(first.booking.id, "emp_1");
+    cancelBooking(second.booking.id, "emp_2");
+
+    expect(() => reassignVehicle(TRIP_ID, "veh_tiny", CONTROLLER)).not.toThrow();
+    expect(getTrip(TRIP_ID)!.trip.capacity).toBe(2);
+    expect(tripManifest(TRIP_ID)).toHaveLength(2);
   });
 
   it("will not roster a driver who has been stood down", () => {
@@ -405,7 +423,7 @@ describe("managing staff", () => {
     const { releasedSeats } = setEmployeeActive("emp_2", "cmp_t", false, HR);
 
     expect(releasedSeats).toBe(1);
-    expect(takenSeats(TRIP_ID)).toEqual([]);
+    expect(takenPlaces(TRIP_ID)).toEqual([]);
   });
 
   it("will not let one company touch another's staff", () => {

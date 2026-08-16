@@ -66,7 +66,7 @@ export async function boardPassAction(_prev: FormState, formData: FormData): Pro
 
   if (result.ok) {
     return {
-      message: `Seat ${result.entry.booking.seatNo} · ${result.entry.employee.name} (${result.entry.companyName}) — boarded at ${result.entry.boardStop.name}.`,
+      message: `${result.entry.employee.name} (${result.entry.companyName}) is on — boarding at ${result.entry.boardStop.name}.`,
     };
   }
 

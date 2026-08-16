@@ -133,7 +133,8 @@ export interface Booking {
   employeeId: string;
   boardStopId: string;
   alightStopId: string;
-  seatNo: number;
+  /** Internal capacity slot, not a seat anyone picks or sees. */
+  place: number;
   fareKes: number;
   employerKes: number;
   employeeKes: number;

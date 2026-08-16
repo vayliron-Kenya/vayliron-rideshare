@@ -90,12 +90,6 @@ export default async function TrackPage({ params }: PageProps) {
             <p className="tabular mt-0.5 text-sm font-medium text-body">{myBooking.boardTime}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-faint">Seat</p>
-            <p className="tabular mt-0.5 text-sm font-medium text-body">
-              {myBooking.booking.seatNo}
-            </p>
-          </div>
-          <div>
             <p className="text-[11px] uppercase tracking-wider text-faint">Pass code</p>
             <p className="mt-0.5 font-mono text-sm font-semibold tracking-[0.2em] text-accent">
               {myBooking.booking.passCode}

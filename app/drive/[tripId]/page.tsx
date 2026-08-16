@@ -320,9 +320,6 @@ export default async function DriveRunPage({ params }: PageProps) {
                       key={entry.booking.id}
                       className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-3 sm:px-5"
                     >
-                      <span className="tabular w-8 shrink-0 text-base font-semibold text-body">
-                        {entry.booking.seatNo}
-                      </span>
                       <div className="min-w-[10rem] flex-1">
                         <p
                           className={`text-sm ${

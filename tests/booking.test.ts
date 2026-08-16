@@ -12,7 +12,7 @@ import {
   employerSpendThisMonth,
   getTrip,
   listBookingsForEmployee,
-  takenSeats,
+  takenPlaces,
   tripManifest,
 } from "@/lib/queries";
 
@@ -113,13 +113,12 @@ function reset(options: { subsidyBps?: number; monthlyCapKes?: number } = {}) {
   insertTrip.run("trp_other", "rte_t", "inbound", SERVICE_DATE, "07:00", "veh_t", "drv_t", 4, "scheduled");
 }
 
-const bookFullLine = (employeeId: string, seatNo?: number) =>
+const bookFullLine = (employeeId: string) =>
   createBooking({
     tripId: TRIP_ID,
     employeeId,
     boardStopId: "stp_a",
     alightStopId: "stp_c",
-    seatNo,
   });
 
 describe("creating a booking", () => {
@@ -143,20 +142,14 @@ describe("creating a booking", () => {
     expect(long.booking.fareKes).toBe(300);
   });
 
-  it("issues a distinct seat and pass code to each rider", () => {
+  it("takes a distinct place and pass code for each rider", () => {
     const first = bookFullLine("emp_1");
     const second = bookFullLine("emp_2");
 
-    expect(first.booking.seatNo).toBe(1);
-    expect(second.booking.seatNo).toBe(2);
+    expect(first.booking.place).toBe(1);
+    expect(second.booking.place).toBe(2);
     expect(first.booking.passCode).not.toBe(second.booking.passCode);
-    expect(takenSeats(TRIP_ID)).toEqual([1, 2]);
-  });
-
-  it("honours a requested seat", () => {
-    const booking = bookFullLine("emp_1", 3);
-    expect(booking.booking.seatNo).toBe(3);
-    expect(bookFullLine("emp_2").booking.seatNo).toBe(1);
+    expect(takenPlaces(TRIP_ID)).toEqual([1, 2]);
   });
 
   it("splits the fare to the shilling", () => {
@@ -166,27 +159,10 @@ describe("creating a booking", () => {
     expect(booking.employeeKes).toBe(0);
   });
 
-  it("refuses a second seat on the same departure", () => {
+  it("refuses a second booking on the same departure", () => {
     bookFullLine("emp_1");
     expect(() => bookFullLine("emp_1")).toThrow(
       expect.objectContaining({ code: "already_booked" }),
-    );
-  });
-
-  it("refuses a seat someone else already holds", () => {
-    bookFullLine("emp_1", 2);
-    try {
-      bookFullLine("emp_2", 2);
-      throw new Error("expected the booking to be rejected");
-    } catch (err) {
-      expect(err).toBeInstanceOf(BookingError);
-      expect((err as BookingError).code).toBe("seat_taken");
-    }
-  });
-
-  it("refuses a seat that does not exist on the bus", () => {
-    expect(() => bookFullLine("emp_1", 99)).toThrow(
-      expect.objectContaining({ code: "seat_taken" }),
     );
   });
 
@@ -227,11 +203,11 @@ describe("creating a booking", () => {
 describe("cancelling", () => {
   beforeEach(() => reset());
 
-  it("puts the seat back on sale", () => {
-    const { booking } = bookFullLine("emp_1", 1);
+  it("puts the place back on sale", () => {
+    const { booking } = bookFullLine("emp_1");
     expect(cancelBooking(booking.id, "emp_1")).toBe(true);
-    expect(takenSeats(TRIP_ID)).toEqual([]);
-    expect(bookFullLine("emp_2", 1).booking.seatNo).toBe(1);
+    expect(takenPlaces(TRIP_ID)).toEqual([]);
+    expect(bookFullLine("emp_2").booking.place).toBe(1);
   });
 
   it("lets the rider book the departure again afterwards", () => {
@@ -240,10 +216,10 @@ describe("cancelling", () => {
     expect(() => bookFullLine("emp_1")).not.toThrow();
   });
 
-  it("will not let one rider cancel another's seat", () => {
+  it("will not let one rider cancel another's booking", () => {
     const { booking } = bookFullLine("emp_1");
     expect(cancelBooking(booking.id, "emp_2")).toBe(false);
-    expect(takenSeats(TRIP_ID)).toEqual([1]);
+    expect(takenPlaces(TRIP_ID)).toEqual([1]);
   });
 
   it("is not double-counted in the rider's history", () => {
@@ -322,12 +298,12 @@ describe("the door", () => {
     expect(boardByPassCode(TRIP_ID, "ZZZZZZ")).toEqual({ ok: false, reason: "not_found" });
   });
 
-  it("orders the manifest by seat and groups riders by stage", () => {
-    bookFullLine("emp_2", 3);
-    bookFullLine("emp_1", 1);
+  it("orders the manifest by rider name and groups riders by stage", () => {
+    bookFullLine("emp_2");
+    bookFullLine("emp_1");
     const manifest = tripManifest(TRIP_ID);
 
-    expect(manifest.map((m) => m.booking.seatNo)).toEqual([1, 3]);
+    expect(manifest.map((m) => m.employee.name)).toEqual(["Rider 1", "Rider 2"]);
     expect(manifest[0].employee.name).toBe("Rider 1");
     expect(manifest[0].companyName).toBe("Tandaza Bank");
     expect(manifest[0].boardStop.id).toBe("stp_a");

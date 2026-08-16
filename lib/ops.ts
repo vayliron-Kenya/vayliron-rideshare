@@ -555,22 +555,30 @@ export function reassignVehicle(tripId: string, vehicleId: string, actor: Actor)
     const capacity = vehicle.capacity as number;
     if (capacity < sold) {
       throw new OpsError(
-        `That bus seats ${capacity} but ${sold} seats are already sold on this departure.`,
+        `That bus holds ${capacity} but ${sold} riders are already booked on this departure.`,
       );
     }
 
-    const highestSeat = (
-      conn
-        .prepare(
-          "SELECT COALESCE(MAX(seat_no), 0) AS n FROM bookings WHERE trip_id = ? AND status IN ('booked','boarded')",
-        )
-        .get(tripId) as Row
-    ).n as number;
-    if (highestSeat > capacity) {
-      throw new OpsError(
-        `Seat ${highestSeat} is sold on this departure and does not exist on that bus.`,
-      );
-    }
+    // Places are an internal capacity counter, so a cancellation can leave a
+    // gap and push the highest place above a smaller bus's capacity. Nobody
+    // sits in a numbered seat, so close the gaps rather than refuse the swap.
+    // The offset keeps the unique index happy while the rows are in flight.
+    conn
+      .prepare(
+        "UPDATE bookings SET seat_no = seat_no + 10000 WHERE trip_id = ? AND status IN ('booked','boarded')",
+      )
+      .run(tripId);
+    conn
+      .prepare(
+        `UPDATE bookings SET seat_no = (
+           SELECT place FROM (
+             SELECT id, ROW_NUMBER() OVER (ORDER BY seat_no) AS place
+               FROM bookings WHERE trip_id = ? AND status IN ('booked','boarded')
+           ) ranked WHERE ranked.id = bookings.id
+         )
+         WHERE trip_id = ? AND status IN ('booked','boarded')`,
+      )
+      .run(tripId, tripId);
 
     conn
       .prepare("UPDATE trips SET vehicle_id = ?, capacity = ? WHERE id = ?")

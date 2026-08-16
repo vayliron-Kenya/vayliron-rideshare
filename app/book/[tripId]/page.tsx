@@ -2,11 +2,12 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { BookingFlow, type StopOption } from "@/components/booking-flow";
-import { AlertIcon, HomeIcon, SeatIcon, WorkIcon } from "@/components/icons";
+import { AlertIcon, BusIcon, HomeIcon, WorkIcon } from "@/components/icons";
 import { BigButton, Notice } from "@/components/simple";
 import { getSession } from "@/lib/auth";
+import { crowding, CROWDING_LABEL } from "@/lib/domain/boarding";
 import { formatServiceDate, nairobiDate } from "@/lib/domain/time";
-import { employerSpendThisMonth, getTrip, takenSeats } from "@/lib/queries";
+import { employerSpendThisMonth, getTrip } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,6 @@ export default async function BookPage({ params, searchParams }: PageProps) {
   const trip = getTrip(tripId);
   if (!trip) notFound();
 
-  const taken = takenSeats(tripId);
   const stops: StopOption[] = trip.timetable.map((entry) => ({
     id: entry.id,
     name: entry.name,
@@ -103,7 +103,7 @@ export default async function BookPage({ params, searchParams }: PageProps) {
       ) : trip.seatsAvailable === 0 ? (
         <>
           <Notice tone="bad" icon={<AlertIcon className="size-6" />} title="This bus is full">
-            All {trip.trip.capacity} seats are taken. Try a later bus on the same route.
+            Every place is taken. Try a later bus on the same route.
           </Notice>
           <BigButton href={`/routes/${trip.route.slug}`} tone="quiet">
             See later buses
@@ -113,20 +113,17 @@ export default async function BookPage({ params, searchParams }: PageProps) {
         <>
           <Notice
             tone="good"
-            icon={<SeatIcon className="size-6" />}
-            title={`${trip.seatsAvailable} seats still free`}
+            icon={<BusIcon className="size-6" />}
+            title={CROWDING_LABEL[crowding(trip.trip.capacity, trip.seatsBooked)]}
           >
-            Answer the questions below and the seat is yours.
+            Check the two ends of your journey and you are on.
           </Notice>
 
           <BookingFlow
             tripId={trip.trip.id}
-            capacity={trip.trip.capacity}
-            takenSeats={taken}
             stops={stops}
             defaultBoardId={defaultBoard.id}
             defaultAlightId={defaultAlight.id}
-            prefilled={Boolean(query.board && query.alight) && defaultBoard.seq < defaultAlight.seq}
             subsidyBps={session.company.subsidyBps}
             monthlyCapKes={session.company.monthlyCapKes}
             monthToDateKes={employerSpendThisMonth(

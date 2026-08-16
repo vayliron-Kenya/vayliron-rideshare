@@ -22,7 +22,7 @@ import {
 } from "@/lib/data/nairobi";
 import { fareForKm, splitFare } from "@/lib/domain/fares";
 import { isServiceDay, orderedStops, TIMETABLE, timetableFor } from "@/lib/domain/schedule";
-import { generatePassCode, nextFreeSeat, TripFullError } from "@/lib/domain/seats";
+import { BusFullError, generatePassCode, nextFreePlace } from "@/lib/domain/boarding";
 import { addDays, nairobiDate, nairobiInstant } from "@/lib/domain/time";
 import type { Direction, RouteStop } from "@/lib/types";
 
@@ -520,14 +520,14 @@ function book(
   const alight = trip.stops.find((s) => s.id === alightId);
   if (!board || !alight || board.seq >= alight.seq) return;
 
-  let seatNo: number;
+  let place: number;
   try {
-    seatNo = nextFreeSeat(trip.capacity, trip.taken);
+    place = nextFreePlace(trip.capacity, trip.taken);
   } catch (err) {
-    if (err instanceof TripFullError) return; // bus is full; this rider drives today
+    if (err instanceof BusFullError) return; // bus is full; this rider drives today
     throw err;
   }
-  trip.taken.push(seatNo);
+  trip.taken.push(place);
 
   const company = companyById.get(rider.companyId)!;
   const monthKey = `${rider.id}|${trip.serviceDate.slice(0, 7)}`;
@@ -560,7 +560,7 @@ function book(
   if (status !== "cancelled") {
     monthToDate.set(monthKey, spent + split.employerKes);
   } else {
-    trip.taken.pop(); // a cancelled seat goes back on sale
+    trip.taken.pop(); // a cancelled booking puts the place back on sale
   }
 
   bookingSeq += 1;
@@ -571,7 +571,7 @@ function book(
     rider.id,
     boardId,
     alightId,
-    seatNo,
+    place,
     split.fareKes,
     split.employerKes,
     split.employeeKes,
