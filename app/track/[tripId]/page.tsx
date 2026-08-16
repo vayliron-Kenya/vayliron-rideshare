@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { LiveMap } from "@/components/live-map";
 import { Badge, Card, DirectionBadge, TripStatusBadge } from "@/components/ui";
 import { getPrincipal, getSession } from "@/lib/auth";
+import { crowding, CROWDING_LABEL } from "@/lib/domain/boarding";
 import { formatServiceDate } from "@/lib/domain/time";
 import { buildPositionPayload } from "@/lib/position";
 import { getTrip, listBookingsForEmployee } from "@/lib/queries";
@@ -41,13 +42,13 @@ export default async function TrackPage({ params }: PageProps) {
       <header>
         <Link
           href={myBooking ? "/bookings" : `/routes/${trip.route.slug}`}
-          className="text-xs text-faint transition-colors hover:text-body"
+          className="inline-flex min-h-11 items-center text-base text-muted transition-colors hover:text-body"
         >
-          ← {myBooking ? "My trips" : `${trip.route.code} ${trip.route.name}`}
+          ← {myBooking ? "Trips" : `${trip.route.code} ${trip.route.name}`}
         </Link>
 
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight text-body">
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-bold tracking-tight text-body">
             <span className="tabular text-accent">{trip.route.code}</span>{" "}
             {trip.route.name}
           </h1>
@@ -62,7 +63,7 @@ export default async function TrackPage({ params }: PageProps) {
         {trip.trip.status === "cancelled" ? (
           <p className="mt-3 rounded-xl bg-flame-soft px-4 py-3 text-sm text-flame">
             This departure was cancelled{trip.trip.cancelReason ? ` — ${trip.trip.cancelReason}` : ""}.
-            Your seat has been released, so book another departure on this line.
+            Your booking has been released, so catch another bus on this line.
           </p>
         ) : trip.trip.delayMinutes > 0 ? (
           <p className="mt-3 rounded-xl bg-amber-soft px-4 py-3 text-sm text-amber">
@@ -71,27 +72,26 @@ export default async function TrackPage({ params }: PageProps) {
           </p>
         ) : null}
 
-        <p className="mt-2 text-sm text-muted">
-          {formatServiceDate(trip.trip.serviceDate)} · departs {trip.trip.departTime} ·{" "}
+        <p className="mt-2 text-sm leading-relaxed text-muted">
+          {formatServiceDate(trip.trip.serviceDate)} · departs {trip.trip.departTime} · driven by{" "}
           {trip.driver.name} ({(trip.driver.ratingBps / 1000).toFixed(1)}★) ·{" "}
-          {trip.seatsBooked} of {trip.trip.capacity} seats sold · traffic factor ×
-          {trip.peakFactor.toFixed(2)}
+          {CROWDING_LABEL[crowding(trip.trip.capacity, trip.seatsBooked)].toLowerCase()} · traffic
+          running ×{trip.peakFactor.toFixed(2)}
         </p>
       </header>
 
       {myBooking ? (
-        <Card className="flex flex-wrap items-center gap-x-8 gap-y-3 px-5 py-4">
+        <Card className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5 py-4">
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-faint">Your stage</p>
-            <p className="mt-0.5 text-sm font-medium text-body">{myBooking.boardStop.name}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-faint">
+              You get on at
+            </p>
+            <p className="mt-0.5 text-lg font-bold text-body">{myBooking.boardStop.name}</p>
+            <p className="tabular text-sm text-muted">scheduled {myBooking.boardTime}</p>
           </div>
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-faint">Scheduled</p>
-            <p className="tabular mt-0.5 text-sm font-medium text-body">{myBooking.boardTime}</p>
-          </div>
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-faint">Pass code</p>
-            <p className="mt-0.5 font-mono text-sm font-semibold tracking-[0.2em] text-accent">
+          <div className="text-right">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-faint">Pass code</p>
+            <p className="mt-0.5 font-mono text-2xl font-bold tracking-[0.18em] text-accent">
               {myBooking.booking.passCode}
             </p>
           </div>

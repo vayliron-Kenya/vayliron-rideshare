@@ -43,7 +43,7 @@ export default async function LandingPage() {
             Vayliron Shared Transportation runs {routes.length} scheduled corporate lines across{" "}
             {stops.length} stages —
             Thika Road, Mombasa Road, Waiyaki Way, Ngong Road, Limuru Road, Jogoo Road,
-            Lang&apos;ata and the airport. Staff reserve a numbered seat, watch the bus approach
+            Lang&apos;ata and the airport. Staff book a departure, watch the bus approach
             their stage, and board with a six-character pass. Finance gets the bill, split
             automatically between the employer and the rider.
           </p>
@@ -89,7 +89,7 @@ export default async function LandingPage() {
           <p className="mt-3 text-xs leading-relaxed text-faint">
             One email, four apps. Where you land depends on who you are — a controller sees the
             network, a driver sees their runs, an HR admin sees their company, a commuter sees
-            their seat.
+            their bus.
           </p>
 
           <div className="mt-6 border-t border-line pt-4">
@@ -130,7 +130,7 @@ export default async function LandingPage() {
           {[
             {
               title: "Rider",
-              body: "Reserve a numbered seat on your own commute, watch the bus approach your stage, and board with a six-character pass.",
+              body: "Book a departure on your own commute in one tap, watch the bus approach your stage, and board with a six-character pass. No seat to choose.",
             },
             {
               title: "Driver",

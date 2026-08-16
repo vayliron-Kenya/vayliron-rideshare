@@ -187,7 +187,7 @@ export default async function CompanyInvoicesPage({ searchParams }: PageProps) {
       <Card className="px-5 py-4">
         <p className="text-xs leading-relaxed text-faint">
           Trips are billed once they have been closed out at the door — both boarded seats and
-          no-shows, because the seat was held either way. Cancelled seats are never billed. Road
+          no-shows, because the place was held either way. Cancelled bookings are never billed. Road
           passenger transport is VAT-exempt in Kenya, so no VAT is charged on this invoice.
         </p>
       </Card>

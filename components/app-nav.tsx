@@ -37,16 +37,8 @@ function linksFor(props: NavProps): NavLink[] {
     return [{ href: "/drive", label: "My runs" }];
   }
 
-  if (props.kind === "employee") {
-    const links: NavLink[] = [
-      { href: "/dashboard", label: "Today" },
-      { href: "/routes", label: "Routes" },
-      { href: "/bookings", label: "My trips" },
-    ];
-    if (props.isCompanyAdmin) links.push({ href: "/company", label: "Company" });
-    return links;
-  }
-
+  // Riders navigate from the bottom tab bar, so the top of their screen stays
+  // empty — one navigation system per surface, not two disagreeing ones.
   return [];
 }
 
@@ -60,11 +52,15 @@ export function AppNav(props: NavProps) {
   const pathname = usePathname();
   const links = linksFor(props);
   const area = props.kind ? AREA_LABEL[props.kind] : "";
+  const rider = props.kind === "employee";
 
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-ink/85 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
-        <Link href={links[0]?.href ?? "/"} className="flex shrink-0 items-center gap-2.5">
+        <Link
+          href={rider ? "/dashboard" : (links[0]?.href ?? "/")}
+          className="flex shrink-0 items-center gap-2.5"
+        >
           <Mark />
           <span className="flex items-baseline gap-1.5 whitespace-nowrap">
             <span className="text-sm font-semibold tracking-tight text-body">Vayliron</span>
@@ -102,8 +98,9 @@ export function AppNav(props: NavProps) {
         ) : null}
 
         <div className="ml-auto flex shrink-0 items-center gap-3">
-          <ThemeToggle />
-          {props.kind ? (
+          {/* Riders get the theme control on their Me tab, not in the chrome. */}
+          {rider ? null : <ThemeToggle />}
+          {rider ? null : props.kind ? (
             <>
               <div className="hidden text-right sm:block">
                 <p className="text-xs font-medium text-body">{props.name}</p>

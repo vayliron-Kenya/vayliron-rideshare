@@ -187,7 +187,7 @@ export function LiveMap({
               <p className="mt-0.5 text-sm text-accent">
                 {data.nextStop.etaMinutes <= 0
                   ? "Arriving now"
-                  : `${data.nextStop.etaMinutes} min away · scheduled ${data.nextStop.time}`}
+                  : `${inWords(data.nextStop.etaMinutes)} · scheduled ${data.nextStop.time}`}
               </p>
             </>
           ) : (
@@ -231,7 +231,7 @@ export function LiveMap({
                       passed ? "text-edge" : "text-accent"
                     }`}
                   >
-                    {passed ? "passed" : `${stop.etaMinutes} min`}
+                    {passed ? "passed" : untilLabel(stop.etaMinutes)}
                   </p>
                 </div>
               </li>
@@ -342,11 +342,33 @@ function placeLabels(
   return labels;
 }
 
+/**
+ * "739 min" is a number nobody converts in their head at a bus stage. Anything
+ * inside the hour stays in minutes, because that is the range a rider is
+ * actually counting down; past it, hours and then days.
+ */
+function inWords(minutes: number): string {
+  if (minutes <= 0) return "now";
+  if (minutes < 60) return `in ${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `in ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "tomorrow" : `in ${days} days`;
+}
+
+/** The same scale, tightened for the column beside each stage. */
+function untilLabel(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h`;
+  return `${Math.round(hours / 24)} d`;
+}
+
 function stateLabel(data: PositionPayload): string {
   if (data.status === "cancelled") return "Departure cancelled";
   switch (data.state) {
     case "not_departed":
-      return `Departs in ${Math.abs(data.minutesSinceDeparture)} min`;
+      return `Departs ${inWords(Math.abs(data.minutesSinceDeparture))}`;
     case "arrived":
       return "Arrived at destination";
     default:

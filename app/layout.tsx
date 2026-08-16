@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { AppNav } from "@/components/app-nav";
+import { RiderTabs } from "@/components/rider-tabs";
 import { THEME_SCRIPT } from "@/components/theme-toggle";
 import { displayName, displayOrg, getPrincipal } from "@/lib/auth";
 
@@ -27,6 +28,7 @@ export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const principal = await getPrincipal();
+  const rider = principal?.kind === "employee";
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -42,11 +44,22 @@ export default async function RootLayout({
           isCompanyAdmin={principal?.kind === "employee" && principal.employee.role === "admin"}
           isNetworkAdmin={principal?.kind === "operator" && principal.operator.role === "superadmin"}
         />
-        <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-6 sm:px-6">{children}</main>
-        <footer className="border-t border-line px-4 py-8 text-center text-xs text-faint sm:px-6">
-          Vayliron Shared Transportation · Vayliron Mobility Ltd, Upper Hill, Nairobi · All times
-          East Africa Time (UTC+3)
-        </footer>
+        <main
+          className={`mx-auto w-full px-4 pt-5 sm:px-6 ${
+            rider ? "max-w-lg pb-28" : "max-w-6xl pb-24"
+          }`}
+        >
+          {children}
+        </main>
+
+        {rider ? (
+          <RiderTabs />
+        ) : (
+          <footer className="border-t border-line px-4 py-8 text-center text-xs text-faint sm:px-6">
+            Vayliron Shared Transportation · Vayliron Mobility Ltd, Upper Hill, Nairobi · All times
+            East Africa Time (UTC+3)
+          </footer>
+        )}
       </body>
     </html>
   );

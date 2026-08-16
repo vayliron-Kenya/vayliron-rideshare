@@ -5,7 +5,7 @@
  *   npm run build && npm start &
  *   npm run smoke
  *
- * Drives the flows that server actions own — signing in, reserving a seat,
+ * Drives the flows that server actions own — signing in, booking a bus,
  * delaying a run from control, checking a rider in at the door — because none
  * of those run under `vitest`. Screenshots land in `.smoke/`.
  */
@@ -30,7 +30,11 @@ function check(name: string, ok: boolean, detail?: string) {
 async function signIn(page: Page, email: string, expectPath: string) {
   await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
   if (!page.url().endsWith("/")) {
-    // Already signed in as somebody else.
+    // Already signed in as somebody else. Staff sign out from the top bar;
+    // riders navigate from a tab bar, so theirs lives on the Me tab.
+    if ((await page.getByRole("button", { name: "Sign out" }).count()) === 0) {
+      await page.goto(`${BASE}/me`, { waitUntil: "networkidle" });
+    }
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.waitForURL(`${BASE}/`, { timeout: 15000 });
   }
@@ -61,43 +65,38 @@ async function main() {
 
   // Matched by destination, not by label: the rider screens use big plain-language
   // rows rather than a button that literally says "Book".
+  await page.goto(`${BASE}/ride`, { waitUntil: "networkidle" });
   const bookLink = () => page.locator('a[href^="/book/"]').first();
-  const onDashboard = (await bookLink().count()) > 0;
-  if (!onDashboard) {
+  const onRideTab = (await bookLink().count()) > 0;
+  if (!onRideTab) {
     await page.goto(`${BASE}/routes/mombasa-road-express`, { waitUntil: "networkidle" });
   }
   const hasDeparture = (await bookLink().count()) > 0;
   check(
     "a bookable departure is offered",
     hasDeparture,
-    onDashboard ? "from the rider's own commute" : "from the routes page",
+    onRideTab ? "from the rider's own commute" : "from the routes page",
   );
   if (!hasDeparture) throw new Error("nothing bookable — reseed with `npm run db:reset`");
 
   await bookLink().click();
   await page.waitForURL("**/book/**", { timeout: 15000 });
 
-  // Arriving from the rider's own commute answers the first two questions, so
-  // the seat step is already open. Coming in cold, answer them.
-  if (await page.locator('button[name="pick-board"]').count()) {
-    await page.locator('button[name="pick-board"]').first().click();
-    await page.locator('button[name="pick-alight"]').first().click();
-  }
-  await page.getByText("Which seat do you want?").first().waitFor({ timeout: 15000 });
-
-  const freeSeat = page.locator('button[aria-label^="Seat "]').first();
-  const seatLabel = await freeSeat.getAttribute("aria-label");
-  await freeSeat.click();
-
+  // Both ends of the journey are answered before the screen renders, so the
+  // fare and the one button are all that is waiting.
   check(
     "the fare is spelled out before booking",
-    await page.getByText("What this costs you").first().isVisible(),
+    await page.getByText("You pay").first().isVisible(),
+  );
+  check(
+    "no seat picker is offered on a city bus",
+    (await page.locator('button[aria-label^="Seat "]').count()) === 0,
   );
   await page.screenshot({ path: path.join(SHOTS, "03-booking.png"), fullPage: true });
 
-  await page.getByRole("button", { name: /Book my seat/ }).click();
+  await page.getByRole("button", { name: /Get on this bus/ }).click();
   await page.waitForURL("**/bookings**", { timeout: 15000 });
-  check("confirming a seat lands on the rider's trips", page.url().includes("/bookings"), seatLabel ?? "");
+  check("confirming a booking lands on the rider's trips", page.url().includes("/bookings"));
 
   const bookingId = new URL(page.url()).searchParams.get("highlight") ?? "";
   const row = page.locator(`[data-booking-id="${bookingId}"]`);
@@ -200,7 +199,7 @@ async function main() {
   // route announcer on every page, which would otherwise match first.
   await page.waitForSelector("[data-board-result]", { timeout: 15000 });
   const banner = await page.locator("[data-board-result]").first().innerText();
-  check("the door accepts the pass code", banner.includes("boarded at"), banner.trim());
+  check("the door accepts the pass code", banner.includes("is on"), banner.trim());
   await page.screenshot({ path: path.join(SHOTS, "13-door.png"), fullPage: true });
 
   await page.fill("#passCode", passCode);
@@ -227,10 +226,11 @@ async function main() {
    * ---------------------------------------------------------------- */
 
   await signIn(page, RIDER, "/dashboard");
-  await page.goto(`${BASE}/bookings`, { waitUntil: "networkidle" });
+  // Highlighted so the delayed booking is the ticket at the top of the tab.
+  await page.goto(`${BASE}/bookings?highlight=${bookingId}`, { waitUntil: "networkidle" });
   const riderSeesDelay = await page
     .locator(`[data-booking-id="${bookingId}"]`)
-    .getByText(/min late/)
+    .getByText(/minutes late/)
     .count();
   check("the rider is told their bus is running late", riderSeesDelay > 0);
   await page.screenshot({ path: path.join(SHOTS, "14-rider-delay.png"), fullPage: true });

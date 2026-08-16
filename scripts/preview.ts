@@ -57,6 +57,11 @@ async function capture(
 async function signIn(page: Page, email: string, expectPath: string) {
   await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
   if (!page.url().endsWith("/")) {
+    // Already signed in as somebody else. Staff sign out from the top bar;
+    // riders navigate from a tab bar, so theirs lives on the Me tab.
+    if ((await page.getByRole("button", { name: "Sign out" }).count()) === 0) {
+      await page.goto(`${BASE}/me`, { waitUntil: "networkidle" });
+    }
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.waitForURL(`${BASE}/`, { timeout: 20000 });
   }

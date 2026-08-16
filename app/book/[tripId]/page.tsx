@@ -18,7 +18,7 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps) {
   const trip = getTrip((await params).tripId);
-  return { title: trip ? `Book ${trip.route.code} ${trip.trip.departTime}` : "Book a seat" };
+  return { title: trip ? `Book ${trip.route.code} ${trip.trip.departTime}` : "Book a bus" };
 }
 
 export default async function BookPage({ params, searchParams }: PageProps) {

@@ -113,6 +113,25 @@ export function AlertIcon(props: IconProps) {
   );
 }
 
+export function RouteIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="6" cy="5.5" r="2.5" />
+      <circle cx="18" cy="18.5" r="2.5" />
+      <path d="M6 8v5a3 3 0 0 0 3 3h6" />
+    </Svg>
+  );
+}
+
+export function PersonIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </Svg>
+  );
+}
+
 export function ArrowIcon(props: IconProps) {
   return (
     <Svg {...props}>
