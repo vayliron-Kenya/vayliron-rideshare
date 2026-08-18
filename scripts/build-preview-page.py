@@ -66,50 +66,69 @@ BODY = "".join(
             "Stage one",
             "The rider",
             "A commuter is standing at a stage in the dark, on a cheap phone, sometimes handing it "
-            "to a child to read the time. So the app is four tabs, one question each, and the answer "
-            "is always the first thing on the screen \u2014 no scrolling to reach what you opened it for. "
-            "Every tab has exactly one loud card, painted in Vayliron\u2019s own gradient, carrying "
-            "whatever that tab exists for.",
+            "to a child to read the time. They want three things and genuinely nothing else: where "
+            "their bus is and how close it is getting, which lines are alive, and what they owe. "
+            "So the app is three tabs \u2014 Track, Routes, Pay \u2014 and the answer is always "
+            "the first thing on the screen. The account lives behind a profile button, so nothing "
+            "competes with a bus for a thumb.",
             [
-                ("02-rider-now.jpg", "phone"),
-                ("03-rider-ride.jpg", "phone"),
-                ("05-rider-booking.jpg", "phone"),
-                ("06-rider-trips.jpg", "phone"),
-                ("07-rider-me.jpg", "phone"),
-                ("04-rider-tracking.jpg", "phone"),
+                ("02-rider-track.jpg", "phone"),
+                ("03-rider-routes.jpg", "phone"),
+                ("04-rider-pay.jpg", "phone"),
+                ("06-rider-booking.jpg", "phone"),
+                ("05-rider-tracking.jpg", "phone"),
             ],
         ),
         stop(
             2,
             "Stage two",
             "The driver",
-            "Built for one hand at a stage before dawn. A driver only ever sees the runs they are "
-            "rostered on; a controller can open any door to cover for them.",
-            [("08-driver-runs.jpg", "phone"), ("09-driver-run.jpg", "phone")],
+            "Built for one hand at a stage before dawn. The four questions a driver asks with the "
+            "engine running have answers at the top of the run: hold or go, where the next pick-up "
+            "is, where the next set-down is, and where every other bus on the line has got to \u2014 "
+            "that last one drawn as a strip, because bunching is invisible in a list of departure "
+            "times and obvious on a corridor.",
+            [("07-driver-runs.jpg", "phone"), ("08-driver-run.jpg", "phone")],
         ),
         stop(
             3,
             "Stage three",
-            "The client control panel",
-            "What HR and finance at a corporate client actually operate. Deliberately dense — people "
-            "paid to use a tool are served by information, not by big buttons.",
+            "The bus owner",
+            "Vayliron does not own the fleet. Nairobi\u2019s public transport is privately held: a "
+            "SACCO pools a few dozen vehicles under one route licence, and behind most of those "
+            "vehicles is one person with a bank loan. So an owner is an account \u2014 they sign "
+            "in, submit a bus with its photographs, and get paid a contracted share of every fare "
+            "it carries.",
             [
-                ("10-company-overview.jpg", "desktop"),
-                ("11-company-people.jpg", "desktop"),
-                ("12-company-invoice.jpg", "desktop"),
+                ("09-owner-fleet.jpg", "desktop"),
+                ("10-owner-bus.jpg", "desktop"),
+                ("11-owner-earnings.jpg", "desktop"),
             ],
         ),
         stop(
             4,
+            "Stage four",
+            "The client control panel",
+            "What HR and finance at a corporate client actually operate. Deliberately dense \u2014 "
+            "people paid to use a tool are served by information, not by big buttons.",
+            [
+                ("13-company-overview.jpg", "desktop"),
+                ("14-company-people.jpg", "desktop"),
+                ("15-company-invoice.jpg", "desktop"),
+            ],
+        ),
+        stop(
+            5,
             "Terminus",
             "Vayliron control",
-            "The people running the network. This is the surface that did not exist at first: without "
-            "it nobody at Vayliron could cancel a run, move a bus or answer a client asking what "
-            "happened on Tuesday.",
+            "The people running the network. This is the surface that did not exist at first: "
+            "without it nobody at Vayliron could approve a bus, cancel a run, move a unit or answer "
+            "a client asking what happened on Tuesday.",
             [
-                ("13-ops-board.jpg", "desktop"),
-                ("14-ops-trip.jpg", "desktop"),
-                ("15-ops-audit.jpg", "desktop"),
+                ("12-ops-approvals.jpg", "desktop"),
+                ("16-ops-board.jpg", "desktop"),
+                ("17-ops-trip.jpg", "desktop"),
+                ("18-ops-audit.jpg", "desktop"),
             ],
         ),
     ]
@@ -411,19 +430,21 @@ HTML = f"""<title>Vayliron Shared Transportation</title>
     </div>
 
     <p class="eyebrow">Walkthrough · Nairobi</p>
-    <h1>Four apps riding one network.</h1>
+    <h1>Five apps riding one network.</h1>
     <p class="lede">
-      A corporate bus line for Nairobi: eight scheduled lines over 44 real stages, Monday to
-      Saturday. Staff book a departure in one tap and board with a six-character pass, drivers work
-      the door from a phone, HR sees the bill, and Vayliron runs the whole thing from a live
-      board. Every screen below is the running application, not a mockup.
+      A shared bus network for Nairobi: eight scheduled lines over 44 real stages, Monday to
+      Saturday, on buses Vayliron does not own. Riders track a bus and pay for it, drivers work the
+      door from a phone, bus owners submit their vehicles and get paid, HR sees the bill, and
+      Vayliron approves the fleet and runs the board. Every screen below is the running
+      application, not a mockup.
     </p>
 
     <div class="facts">
       <span><b>8</b> lines</span>
       <span><b>44</b> stages</span>
+      <span><b>5</b> owner accounts</span>
       <span><b>480</b> seeded staff</span>
-      <span><b>126</b> tests</span>
+      <span><b>165</b> tests</span>
       <span><b>26</b> browser checks</span>
     </div>
   </header>
@@ -435,7 +456,7 @@ HTML = f"""<title>Vayliron Shared Transportation</title>
   <section class="band">
     <h2>Try it yourself</h2>
     <p style="color: var(--muted); max-width: var(--measure);">
-      One sign-in serves all four apps — where you land depends on whose address it is. There is no
+      One sign-in serves all five apps — where you land depends on whose address it is. There is no
       password: the demo identifies people by email alone, which is the first thing to replace
       before real staff data goes near it.
     </p>
@@ -457,6 +478,8 @@ HTML = f"""<title>Vayliron Shared Transportation</title>
           <tr><td><code>naliaka.wekesa@vayliron.co.ke</code></td><td>/ops</td><td class="role">Network admin — can also edit the fleet and client contracts</td></tr>
           <tr><td><code>daniel.mutiso@vayliron.co.ke</code></td><td>/ops</td><td class="role">Controller — runs the daily board</td></tr>
           <tr><td><code>peter.mwangi@vayliron.co.ke</code></td><td>/drive</td><td class="role">Driver</td></tr>
+          <tr><td><code>joseph.kamau@kasaranistar.co.ke</code></td><td>/fleet</td><td class="role">Bus owner — Kasarani Star SACCO, ten units</td></tr>
+          <tr><td><code>mary.achieng@gmail.com</code></td><td>/fleet</td><td class="role">Bus owner — one person, one matatu</td></tr>
           <tr><td><code>wanjiku.karanja@tandaza.co.ke</code></td><td>/dashboard</td><td class="role">Rider and HR admin — Tandaza Bank, 100% subsidy</td></tr>
           <tr><td><code>brenda.atieno@zurihealth.co.ke</code></td><td>/dashboard</td><td class="role">Rider and HR admin — Zuri Health, 75% with a monthly cap</td></tr>
           <tr><td><code>otieno.odhiambo@tandaza.co.ke</code></td><td>/dashboard</td><td class="role">Rider only</td></tr>
@@ -474,18 +497,27 @@ npm run dev        # http://localhost:3000</pre>
     <div class="panel" style="border-bottom: 0; padding-top: 20px;">
       <div class="panel__text">
         <p style="color: var(--muted);">
-          vayliron.com is a light site, so the app is light out of the box. The control on the
-          rider's Me tab pins light or dark, or follows the phone's own setting — and a pinned
-          choice is applied before the first paint, so it never flashes the wrong one.
+          vayliron.com is a light site, so the app is light out of the box. The control behind the
+          rider's profile button pins light or dark, or follows the phone's own setting — and a
+          pinned choice is applied before the first paint, so it never flashes the wrong one.
         </p>
       </div>
-      {screen('16-dark.jpg', 'phone')}
+      {screen('19-dark.jpg', 'phone')}
     </div>
   </section>
 
   <section class="band" style="background: var(--surface);">
-    <h2>Three things worth knowing</h2>
+    <h2>Four things worth knowing</h2>
     <div class="grid">
+      <div class="card">
+        <h3>The fleet is not Vayliron\u2019s</h3>
+        <p>
+          Nairobi\u2019s buses are privately owned, so a vehicle is not a row an operator types in:
+          an owner submits it with four photographs and HQ decides. A vehicle\u2019s approval state
+          is load-bearing rather than decorative \u2014 an unapproved bus cannot be rostered, and
+          the seed skips them when it assigns departures rather than quietly contradicting the queue.
+        </p>
+      </div>
       <div class="card">
         <h3>Nobody picks a seat</h3>
         <p>
