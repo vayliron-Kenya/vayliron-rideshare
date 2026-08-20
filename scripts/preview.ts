@@ -202,8 +202,8 @@ async function main() {
   await capture(
     phonePage,
     "02-rider-track.jpg",
-    "Rider · Track",
-    "Tab one answers one question: where is my bus and how close is it getting. The countdown is the biggest thing on the screen, then where to get on, then the code to show at the door. Once the bus is genuinely on the road the corridor is drawn underneath, so \u201chow close\u201d stops being a number and becomes a picture.",
+    "Rider · My bus",
+    "One question, one screen: how long until my bus gets here. The countdown is the biggest thing on the phone, and the rest of the panel is the line itself \u2014 your two stops bright, the ones between dimmed, and the rail filling in as the bus works toward you.",
     "phone",
   );
 
@@ -211,8 +211,8 @@ async function main() {
   await capture(
     phonePage,
     "03-rider-routes.jpg",
-    "Rider · Routes",
-    "Which lines are alive right now. Anything with a bus actually moving on it carries a live dot and leads the list; lines that have finished for the day fall to the bottom rather than vanishing, because knowing the last one has gone is an answer too.",
+    "Rider · Buses",
+    "Which buses are out. Anything actually moving carries a live dot and leads the list; lines that have finished for the day sink to the bottom rather than vanishing, because knowing the last one has gone is an answer too.",
     "phone",
   );
 
@@ -258,11 +258,17 @@ async function main() {
   );
 
   await phonePage.goto(`${BASE}/drive/${busyTrip}`, { waitUntil: "networkidle" });
+  // Open the tab that shows the line and the other buses on it.
+  const lineTab = phonePage.getByRole("tab", { name: /^Line/ });
+  if (await lineTab.count()) {
+    await lineTab.click();
+    await phonePage.waitForTimeout(400);
+  }
   await capture(
     phonePage,
     "08-driver-run.jpg",
     "Driver · Working a run",
-    "Open boarding, start the run, check riders in by pass code, call each stage, report a delay straight to control, then close out.",
+    "Four tabs, each one screen: whether to hold or go with the next pick-up and set-down under it, checking riders in by code, the line with every other bus on it drawn along the corridor, and one form to tell control what has gone wrong.",
     "phone",
   );
 

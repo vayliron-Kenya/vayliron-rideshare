@@ -65,12 +65,12 @@ BODY = "".join(
             1,
             "Stage one",
             "The rider",
-            "A commuter is standing at a stage in the dark, on a cheap phone, sometimes handing it "
+            "A commuter is standing at a stop in the dark, on a cheap phone, sometimes handing it "
             "to a child to read the time. They want three things and genuinely nothing else: where "
-            "their bus is and how close it is getting, which lines are alive, and what they owe. "
-            "So the app is three tabs \u2014 Track, Routes, Pay \u2014 and the answer is always "
-            "the first thing on the screen. The account lives behind a profile button, so nothing "
-            "competes with a bus for a thumb.",
+            "their bus is and how close it is getting, which buses are out, and what they owe. So "
+            "the app is three tabs \u2014 My bus, Buses, Pay \u2014 and each one is exactly one "
+            "screen. The page never scrolls up or down; you switch tabs instead. The account lives "
+            "behind a profile button, so nothing competes with a bus for a thumb.",
             [
                 ("02-rider-track.jpg", "phone"),
                 ("03-rider-routes.jpg", "phone"),
@@ -83,11 +83,11 @@ BODY = "".join(
             2,
             "Stage two",
             "The driver",
-            "Built for one hand at a stage before dawn. The four questions a driver asks with the "
-            "engine running have answers at the top of the run: hold or go, where the next pick-up "
-            "is, where the next set-down is, and where every other bus on the line has got to \u2014 "
-            "that last one drawn as a strip, because bunching is invisible in a list of departure "
-            "times and obvious on a corridor.",
+            "Built for one hand at a stop before dawn. Working a bus is four separate jobs and a "
+            "driver only ever does one at a time, so the run is four tabs on one screen: hold or "
+            "go, checking people in, the line with every other bus drawn along it, and one form to "
+            "tell control what has gone wrong. Bunching is invisible in a list of departure times "
+            "and obvious the moment the buses are plotted on the same corridor.",
             [("07-driver-runs.jpg", "phone"), ("08-driver-run.jpg", "phone")],
         ),
         stop(
@@ -490,6 +490,16 @@ HTML = f"""<title>Vayliron Shared Transportation</title>
 <pre>git clone &amp;&amp; npm install
 npm run db:reset   # builds ~40 service days of history
 npm run dev        # http://localhost:3000</pre>
+  </section>
+
+  <section class="band" style="background: var(--surface);">
+    <h2>Glass over an aurora</h2>
+    <p style="color: var(--muted); max-width: var(--measure);">
+      Two soft lamps of brand colour drift behind everything, fixed to the viewport, and every
+      surface above them is translucent with a hairline of light along its top edge. The colour
+      showing through one card is never quite the colour showing through the next, which is what
+      makes a flat rectangle read as a pane with thickness.
+    </p>
   </section>
 
   <section class="band" style="background: var(--surface);">
