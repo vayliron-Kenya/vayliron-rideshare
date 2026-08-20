@@ -1,16 +1,23 @@
 # Vayliron Shared Transportation
 
-A corporate bus line for Nairobi, as four applications over one network:
+A shared bus network for Nairobi, as five applications over one network — on
+buses Vayliron does not own.
 
 | Surface | Who it is for | Where |
 | --- | --- | --- |
-| **Rider app** | Commuters | `/dashboard`, `/book`, `/bookings`, `/track` |
-| **Driver app** | Drivers, mobile-first | `/drive` |
+| **Rider app** | Commuters, phone-first | `/dashboard`, `/routes`, `/pay` |
+| **Driver app** | Drivers, phone-first | `/drive` |
+| **Owner panel** | Whoever owns the bus — a SACCO or one person | `/fleet` |
 | **Client control panel** | HR and finance at a client company | `/company` |
 | **Vayliron control panel** | The people running the network | `/ops` |
 
-One sign-in serves all four — where you land depends on who the email belongs
-to. Eight lines, 44 stages, Monday to Saturday.
+One sign-in serves all five — where you land depends on who the email belongs
+to. Eight lines, 44 stops, Monday to Saturday.
+
+Nairobi's public transport is privately owned, and the model here follows that:
+an owner submits a vehicle with photographs, Vayliron approves it or does not,
+and every fare it then carries is split between the two. Nothing Vayliron has
+not approved can be rostered.
 
 ```
 VL-01  Thika Road Express        Juja · Ruiru · Roysambu · CBD · Upper Hill
@@ -42,43 +49,98 @@ Sign in with any seeded email — the seed prints a set when it finishes:
 | `brenda.atieno@zurihealth.co.ke` | `/dashboard` | Rider + HR admin, Zuri Health (75% subsidy, KSh 4,500/month cap) |
 | `joseph.kariuki@maralogistics.co.ke` | `/dashboard` | Rider + HR admin, Mara Logistics (50% subsidy, KSh 3,000/month cap) |
 | `otieno.odhiambo@tandaza.co.ke` | `/dashboard` | Rider only |
+| `joseph.kamau@kasaranistar.co.ke` | `/fleet` | Bus owner — Kasarani Star SACCO, ten units |
+| `mary.achieng@gmail.com` | `/fleet` | Bus owner — one person, one matatu |
 
 `npm run db:reset` wipes and rebuilds. The seed is driven by a fixed PRNG seed,
 so the same network comes back every time.
 
-## The four apps
+## The five apps
 
 ### Rider
 
-The rider screens are deliberately plainer than the rest of the app. A commuter
-is standing at a stage in the dark, often on a cheap phone, sometimes handing it
-to a child to read the time, and not necessarily reading English quickly. So
-those screens follow three rules: one obvious thing to do per screen as a
-full-width button; touch targets of at least 56px; and labels you would say out
-loud — "Where do you get on?", not "Boarding stage". Icons always accompany a
-word rather than replacing it, and no state is signalled by colour alone.
+Three tabs and genuinely nothing else, because a rider on a Nairobi bus wants
+three things: where their bus is and how close it is getting, which buses are
+out, and what they owe.
 
-Booking is three questions asked one at a time, each collapsing to a single line
-with a Change link once answered, so there is never more than one decision on
-screen. Arriving from your own commute answers the first two, leaving one tap.
+| Tab | Answers |
+| --- | --- |
+| **My bus** (`/dashboard`) | How long until it reaches me |
+| **Buses** (`/routes`) | Which lines have a bus moving right now |
+| **Pay** (`/pay`) | What do I owe, and what have I paid |
 
-`/dashboard` shows the next trip with a live countdown and boarding pass,
-month-to-date spend, and departures that serve both their home stage and their
-workplace — rolling forward to the next day with buses on it rather than showing
-an empty list at 6pm. `/book/[trip]` prices the leg before they commit and lets
-them pick a seat off a 2+2 map. `/bookings` holds the pass codes, flags a run
-that control has put behind schedule, and cancels a seat back onto sale.
-`/track/[trip]` draws the corridor from real coordinates and moves the bus along
-it.
+The shell is the viewport. A fixed header, a floating tab dock, and a panel in
+between that each tab is built to fill exactly — the page itself never scrolls
+up or down, you switch tabs instead. Screens reached *from* a tab (the live map,
+the account, booking) are ordinary documents and scroll inside the panel.
+
+**My bus** puts the countdown at the size of the phone and spends the rest of
+the panel on the line itself: your two stops bright, the ones between dimmed,
+and the rail filling in as the bus works toward you. A countdown says how long;
+that says how close, which is the thing people actually crane their necks for.
+
+There is **no seat to pick** — these are city buses. Getting on is the journey,
+the price and one button; either end can be changed, which swaps the card for a
+single list of stops. Capacity is still exact: each booking takes the lowest
+free internal place, guarded by a partial unique index, and that number is never
+shown to anyone. How full a bus is appears as a phrase — "Lots of room",
+"Filling up", "Nearly full" — because "37 of 49" is a sum you have to do while a
+bus is pulling in.
+
+**Pay** raises the charge the moment a place is taken, not at the door: the bus
+owner is owed for the place whether or not the rider turns up. Where an employer
+covers the whole fare there is no push to anyone's phone and the method says so.
+
+The account — month-to-date spend, the two stops on file, the theme control,
+sign-out — lives behind the profile button in the header, so it never competes
+with a bus for a thumb.
 
 ### Driver
 
-Built for a phone held at a stage. `/drive` is the day's roster with month-to-date
-runs, riders carried and on-time rate. `/drive/[trip]` is the run itself: open
-boarding, start the run, check riders in by pass code, call each stage as it is
-reached, report a delay against fixed buttons, raise an incident straight to
-control, and close the run out. A driver can only open runs they are rostered on;
-a controller can open any of them to cover the door.
+Built for one hand at a stop before dawn, on the same fixed-height shell.
+`/drive` is the day's roster with month-to-date runs, riders carried and on-time
+rate. `/drive/[trip]` is the run itself, cut into four tabs — working a bus is
+four separate jobs and a driver only ever does one of them at a time:
+
+| Tab | What it is for |
+| --- | --- |
+| **Now** | Hold or go, in the largest type on the screen, with the next pick-up and set-down under it |
+| **Riders** | Check someone in with the six characters off their phone |
+| **Line** | Every other bus on the corridor, plotted on the same strip |
+| **Report** | One form to control; minutes added here change what riders see |
+
+The corridor strip exists because bunching — three buses nose to tail and then a
+twenty-minute hole — is invisible in a list of departure times and obvious the
+moment the buses are drawn on the same line.
+
+The cue follows the clock, not the status flag: a driver who taps "set off"
+early leaves a run marked in transit while the bus is standing at the terminus,
+and the answer there is still "hold", not "next stop in 686 minutes".
+
+A driver can only open runs they are rostered on; a controller can open any of
+them to cover the door.
+
+### Owner panel
+
+Vayliron does not own the fleet. `/fleet` is the account of whoever does — a
+SACCO pooling a few dozen vehicles under one route licence, or one person with a
+bank loan and a matatu.
+
+It leads with the money, then lists each unit with the one thing that is true
+about it right now: carrying riders, sitting with Vayliron, or waiting on the
+owner. `/fleet/add` asks only what decides whether a bus can work a route —
+plate, make, body type, capacity. Everything subjective about a vehicle is
+settled by four photographs on `/fleet/[vehicle]`: the bus from outside, down
+the aisle, the plate, and the logbook. Those are the things an owner would
+describe generously and a controller has to see.
+
+`/fleet/earnings` shows two numbers that are not the same number — what riders
+paid on their buses, and what they keep after commission — with the split
+spelled out between them, by bus and by day.
+
+Photographs are logbooks and number plates, so they are served from
+`/api/vehicle-photos/[id]`, which checks the viewer is either Vayliron staff or
+the owner who uploaded them. They are not public files.
 
 ### Client control panel
 
@@ -101,7 +163,13 @@ incidents, with a per-line rollup and what is on the road right now.
 schedule, swap the bus or the driver, cancel it with a reason, or resolve an
 incident. `/ops/fleet` and `/ops/clients` cover utilisation and revenue;
 `/ops/audit` is the network-wide trail of who changed what; `/ops/network`
-(network admins only) suspends lines and adds stages.
+(network admins only) suspends lines and adds stops.
+
+`/ops/approvals` is the gate. A vehicle carries nobody until somebody here has
+looked at it, so the four photographs *are* the page rather than thumbnails in a
+table row, with two buttons under them. A rejection has to carry a reason, and
+the owner reads that exact sentence on their own screen — being told no with no
+reason leaves nothing to fix. The board carries a count of what is waiting.
 
 ## Brand
 
@@ -134,10 +202,17 @@ Two deliberate departures, both about legibility rather than taste:
   meters and graphics, and dark mode restores them everywhere.
 
 The site is light-first with a `.dark` class, so this app is light by default.
-The theme control in the header has three states — light, dark, and follow the
-system — and a pinned choice is applied before first paint so it never flashes
-the wrong one. Every colour lives in `app/globals.css`; no component hard-codes
-one.
+The theme control has three states — light, dark, and follow the system — and a
+pinned choice is applied before first paint so it never flashes the wrong one.
+Every colour lives in `app/globals.css`; no component hard-codes one.
+
+The two phone surfaces are **glass over an aurora**. Two soft lamps of brand
+colour drift behind everything, fixed to the viewport rather than the page, and
+every surface above them is translucent with a hairline of light along its top
+edge. The colour showing through one card is never quite the colour showing
+through the next, which is what makes a flat rectangle read as a pane with a
+thickness. The depth is doing the work — no colour was added to the brand to get
+there.
 
 The control panels do **not** follow those rules. A controller triaging a
 morning peak and a finance admin reconciling an invoice need density — sortable
@@ -169,6 +244,14 @@ monthly ceiling per employee. The employer's share is floored, never rounded, so
 the two halves always reconstruct the fare exactly — the `bookings` table
 enforces that as a `CHECK` constraint. Once an employee exhausts the monthly
 allowance, the balance moves to them and the booking screen says so.
+
+**Every fare is split** the moment the money moves, between the owner of the bus
+that carried the rider and Vayliron's commission for the network, the app and
+the payments. The owner's share is floored and the remainder goes to the
+network, so the two halves always reconstruct what was paid — `payments`
+enforces that as a `CHECK`. The split is *stored* rather than recomputed from
+the current rate, because changing an owner's rate next month must not restate
+last month.
 
 **Timetables** are free-flow durations scaled by a peak factor for the departure
 time (×1.10 off-peak up to ×1.75 between 07:30 and 09:00). A 07:00 departure off
@@ -204,58 +287,72 @@ bus still sitting at the depot must not erase a delay somebody reported.
 
 ```
 app/
-  page.tsx                 landing + sign-in for all four surfaces
-  dashboard/ book/ bookings/ track/   rider app
-  routes/[slug]/           timetable, stage list, departures
-  drive/[tripId]/          driver app
+  layout.tsx               the shell — fixed height on phones, flowing on desktop
+  page.tsx                 landing + sign-in for all five surfaces
+  dashboard/ routes/ pay/  the rider's three tabs
+  book/ bookings/ track/ ride/  screens reached from a tab
+  drive/[tripId]/          driver app — four tabs on one screen
+  fleet/{add,earnings,[vehicleId]}/  bus owner panel
   company/{people,policy,invoices,activity}/  client control panel
-  ops/{trips,fleet,clients,audit,network}/    Vayliron control panel
+  ops/{trips,approvals,fleet,clients,audit,network}/  Vayliron control panel
   api/trips/[tripId]/position         polling endpoint for the map
+  api/vehicle-photos/[photoId]        authenticated photo route
   api/company/invoice.csv             invoice export
-  actions.ts               rider server actions
+  actions.ts               rider server actions, including paying a fare
   drive-actions.ts         driver and door server actions
+  fleet-actions.ts         owner server actions — add, photograph, submit
   company-actions.ts       client-admin server actions
-  ops-actions.ts           network control server actions
+  ops-actions.ts           network control, including approve and reject
 lib/
-  domain/                  pure logic — fares, schedule, seats, tracking, geo, time
-  data/nairobi.ts          stops, lines, fleet, drivers, clients, Vayliron staff
+  domain/                  pure logic — fares, payments, schedule, boarding,
+                           tracking, geo, time
+  data/nairobi.ts          stops, lines, fleet, owners, drivers, clients, staff
   queries.ts               what a rider can read and do
-  ops.ts                   what staff can read and do
+  ops.ts                   what network staff can read and do
+  owners.ts                the fleet: submitting a bus, and HQ's verdict
+  dispatch.ts              what a driver needs in the next sixty seconds
+  commute.ts               the departures useful to one commuter
   audit.ts                 who changed what
   schema.sql               SQLite schema
-  auth.ts                  multi-principal session (rider / driver / controller)
+  auth.ts                  four-principal session (rider / driver / owner / controller)
+components/rider.tsx       the rider's glass vocabulary
+components/run-tabs.tsx    the driver's four tabs
 tests/                     vitest suites over the domain, booking and operations
 scripts/seed.ts            network generator
-scripts/smoke.ts           browser end-to-end run across all four surfaces
+scripts/smoke.ts           browser end-to-end run across every surface
 ```
 
 Everything that decides a number lives in `lib/domain` as a pure function, which
 is why the test suite can cover fares, caps, peak factors, direction reversal,
-seat allocation and tracking without touching a database.
+capacity, the owner/network split and tracking without touching a database.
 
 ## Tests
 
 ```bash
-npm test          # 123 unit and integration tests
+npm test          # 166 unit and integration tests, 8 suites
 npm run typecheck
 npm run build
 ```
 
 The suite covers the domain functions and drives the real paths against a
-throwaway SQLite file: overselling, double-booking, seat races, cancellation
-freeing a seat, monthly caps biting mid-month, pass codes refused twice, a
-cancelled run releasing every seat, a replacement bus too small for the riders
-already on it, delays compounding and clamping, off-domain staff emails, what a
-monthly invoice does and does not bill, and the audit trail — including that a
-cancellation does not leak to a client with nobody on board, and that a failed
-audit write does not roll back the change it was describing.
+throwaway SQLite file: overselling, double-booking, races for the last place,
+cancellation freeing it again, monthly caps biting mid-month, pass codes refused
+twice, a cancelled run releasing every booking, a replacement bus too small for
+the riders already aboard (and gaps being closed so a smaller one still fits),
+delays compounding and clamping, off-domain staff emails, what a monthly invoice
+does and does not bill, the owner/network split always reconstructing the fare,
+Kenyan phone numbers in all the shapes people type them, a fare that cannot be
+paid twice or paid by somebody else, whether a driver should hold or go, and the
+audit trail — including that a cancellation does not leak to a client with
+nobody on board, and that a failed audit write does not roll back the change it
+was describing.
 
 Server actions never run under `vitest`, so there is a browser pass for those:
 
 ```bash
 npm run db:reset
 npm run build && npm start &
-npm run smoke     # screenshots land in .smoke/
+npm run smoke     # 26 checks; screenshots land in .smoke/
 ```
 
 There is also a capture script behind `npm run preview`, which photographs a
@@ -263,7 +360,7 @@ curated set of screens — the rider and driver at phone width, the two control
 panels at desktop width — and `scripts/build-preview-page.py` folds them into a
 single self-contained walkthrough page.
 
-The smoke run walks all four surfaces in one session: signs in as a rider and books a seat,
+The smoke run walks every surface in one session: signs in as a rider and books a seat,
 reads the issued pass code and opens the live map, switches to the HR hat to add
 a member of staff and pull an invoice, signs in as a controller to put that exact
 run ten minutes behind, works the door with the pass code, calls a stage, then
@@ -283,15 +380,20 @@ own activity log shows the change their admin made.
   could. Real deployments should move it to append-only storage, or ship it off
   the box, before it is evidence in a dispute.
 - **Editing a line's stages is deliberately not exposed.** Reordering stops or
-  changing distances repricess live bookings, so `/ops/network` can suspend a
-  line and add a stage but not rewire one. Lines live in `lib/data/nairobi.ts`.
+  changing distances reprices live bookings, so `/ops/network` can suspend a
+  line and add a stop but not rewire one. Lines live in `lib/data/nairobi.ts`.
 - **SQLite is a single-node store.** The booking path is transactional and the
-  seat and one-per-departure guards are partial unique indexes, so it is correct
-  under concurrency on one node — but it will not survive being scaled out.
-  Point it at Postgres before it does.
-- **Payments are not implemented.** Employers are invoiced monthly and staff
-  contributions are described as payroll deductions; there is no M-Pesa
-  integration behind that, only the arithmetic.
+  capacity and one-per-departure guards are partial unique indexes, so two
+  riders cannot take the last place on one node — but it will not survive being
+  scaled out. Point it at Postgres before it does.
+- **M-Pesa is arithmetic, not Safaricom.** There are no Daraja credentials, so
+  no STK push leaves the box: `settlePayment` writes the receipt the callback
+  would have carried, in the same shape, and every screen that shows one says
+  where it came from. The split, the ledger and the owner payout figures are all
+  real; only the transport is missing.
+- **Vehicle photographs sit on local disk** under `data/vehicle-photos`, served
+  through an authenticated route. Object storage is the right home before this
+  holds anyone's logbook.
 - **The CO₂e figure is indicative**, from a flat 160 g/passenger-km difference.
   Do not put it in an audited disclosure without a real methodology.
 
@@ -300,4 +402,6 @@ own activity log shows the change their admin made.
 Next.js 15 (App Router, server components, server actions) · React 19 ·
 TypeScript · Tailwind CSS v4 · SQLite via better-sqlite3 · Vitest · Playwright.
 No mapping library and no charting library — the corridor map and the spend
-chart are hand-rolled SVG, which keeps the client bundle at ~103 kB shared.
+chart are hand-rolled SVG, which keeps the client bundle at ~103 kB shared. The
+glass, the aurora and the fixed-height shell are plain CSS in
+`app/globals.css`; there is no UI kit under any of it.
