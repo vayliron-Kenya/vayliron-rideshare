@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { listAudit, subjectHistory, type Actor } from "@/lib/audit";
 import { db, readSchema } from "@/lib/db";
-import { buildTimetable } from "@/lib/domain/schedule";
+import { buildTimetable, nextServiceDate } from "@/lib/domain/schedule";
 import { trackTrip } from "@/lib/domain/tracking";
-import { nairobiInstant } from "@/lib/domain/time";
+import { nairobiDate, nairobiInstant } from "@/lib/domain/time";
 import {
   cancelTrip,
   createEmployee,
@@ -45,7 +45,13 @@ const HR: Actor = {
   companyId: "cmp_t",
 };
 
-const SERVICE_DATE = "2026-08-17"; // a Monday
+/*
+ * Always the next day the network actually runs, never a hardcoded date.
+ * `setEmployeeActive` only releases bookings on trips from today onwards, so a
+ * fixture pinned to a fixed Monday quietly stops testing anything the moment
+ * the calendar passes it.
+ */
+const SERVICE_DATE = nextServiceDate(nairobiDate());
 const TRIP_ID = "trp_test";
 const BIG_TRIP_ID = "trp_big";
 
@@ -511,7 +517,7 @@ describe("the audit trail", () => {
     db().prepare("DELETE FROM trips WHERE id = ?").run(TRIP_ID);
 
     const [entry] = listAudit({ action: "trip.cancel" });
-    expect(entry.subjectLabel).toBe("VL-99 06:30 on 2026-08-17");
+    expect(entry.subjectLabel).toBe(`VL-99 06:30 on ${SERVICE_DATE}`);
   });
 
   it("records both sides of a reassignment", () => {

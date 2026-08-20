@@ -2,37 +2,27 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AlertIcon, BusIcon, PinIcon } from "@/components/icons";
-import { LiveMap } from "@/components/live-map";
-import {
-  Card,
-  DirectionChip,
-  Eyebrow,
-  EmptyTab,
-  HeroCard,
-  PassCode,
-  TabHead,
-} from "@/components/rider";
+import { DirectionChip, EmptyTab, Eyebrow, HeroCard, PassCode, Screen } from "@/components/rider";
 import { getSession } from "@/lib/auth";
 import { nextDeparturesFor } from "@/lib/commute";
 import { nextServiceDate } from "@/lib/domain/schedule";
-import { formatServiceDate, nairobiDate } from "@/lib/domain/time";
+import { nairobiDate } from "@/lib/domain/time";
 import { buildPositionPayload } from "@/lib/position";
-import { listBookingsForEmployee } from "@/lib/queries";
+import { listBookingsForEmployee, type BookingView } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Track" };
+export const metadata = { title: "My bus" };
 
 /**
- * Tab 1 — Track.
+ * Tab 1 — My bus.
  *
- * One question: where is my bus and how close is it getting? The countdown is
- * the first and largest thing on the screen; once the bus is actually on the
- * road the corridor is drawn underneath it with the bus on it, so "how close"
- * stops being a number and becomes a picture. If there is nothing booked the
- * tab says so and points at the Routes tab rather than showing an empty list.
+ * One question, one screen: how long until my bus gets here. The countdown is
+ * the biggest thing on the phone, the two stops sit under it, the code is
+ * where a thumb can reach it, and there is one button. Nothing scrolls — if
+ * there is more to say, it is on another tab.
  */
-export default async function TrackPage() {
+export default async function MyBusPage() {
   const session = await getSession();
   if (!session) redirect("/");
 
@@ -40,199 +30,214 @@ export default async function TrackPage() {
   const now = new Date();
   const today = nairobiDate(now);
 
-  const upcoming = listBookingsForEmployee(employee.id, { from: today })
+  const next = listBookingsForEmployee(employee.id, { from: today })
     .filter((b) => b.booking.status === "booked" || b.booking.status === "boarded")
-    .sort((a, b) => a.trip.departsAt.getTime() - b.trip.departsAt.getTime());
+    .sort((a, b) => a.trip.departsAt.getTime() - b.trip.departsAt.getTime())
+    .find((b) => b.trip.arrivesAt.getTime() > now.getTime());
 
-  const next = upcoming.find((b) => b.trip.arrivesAt.getTime() > now.getTime());
-  const onTheRoad = next?.trip.trip.status === "in_transit";
-  const position = onTheRoad ? buildPositionPayload(next.trip.trip.id) : null;
+  if (!next) {
+    return (
+      <Screen eyebrow={greeting(now)} title={firstName(employee.name)}>
+        <NothingBooked home={employee.homeStopId} work={employee.workStopId} now={now} />
+      </Screen>
+    );
+  }
+
+  const progress = buildPositionPayload(next.trip.trip.id, now)?.progress ?? 0;
 
   return (
-    <div className="space-y-5">
-      <TabHead eyebrow={formatServiceDate(today)} title={`${greeting(now)}, ${firstName(employee.name)}`} />
+    <Screen
+      eyebrow={greeting(now)}
+      title={firstName(employee.name)}
+      action={<DirectionChip direction={next.trip.trip.direction} />}
+    >
+      <HeroCard grow>
+        <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <Eyebrow onWash>
+              {next.trip.route.code} · {next.trip.route.name}
+            </Eyebrow>
+            {next.trip.trip.status === "in_transit" ? (
+              <span className="flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-xs font-bold text-white">
+                <span className="live-dot size-1.5 rounded-full bg-white" aria-hidden="true" />
+                ON THE WAY
+              </span>
+            ) : null}
+          </div>
 
-      {next ? (
-        <>
-          <HeroCard>
-            <div className="space-y-5 p-6">
-              <div className="flex items-center justify-between gap-3">
-                <Eyebrow onWash>Your bus</Eyebrow>
-                <DirectionChip direction={next.trip.trip.direction} onWash />
-              </div>
+          <Countdown view={next} now={now} />
 
-              <Countdown boardsAt={boardingTime(next)} now={now} boardTime={next.boardTime} />
-
-              <div className="space-y-1.5 border-t border-white/20 pt-4">
-                <p className="text-lg text-white">
-                  Get on at <span className="font-bold">{next.boardStop.name}</span>
-                </p>
-                <p className="text-lg text-white/85">
-                  Get off at <span className="font-bold text-white">{next.alightStop.name}</span>
-                </p>
-                <p className="text-sm text-white/70">
-                  {next.trip.route.code} · {next.trip.route.name}
-                </p>
-              </div>
-
-              <PassCode code={next.booking.passCode} onWash />
-
-              <Link
-                href={`/track/${next.trip.trip.id}`}
-                className="flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-white text-lg font-bold text-deep transition-transform active:scale-[0.98]"
-              >
-                <PinIcon className="size-6" />
-                {onTheRoad ? "Follow it stage by stage" : "See the whole line"}
-              </Link>
-            </div>
-          </HeroCard>
-
-          {/* Only drawn once the bus is actually moving — a corridor with a
-              stationary dot on it at 04:00 answers nothing. */}
-          {onTheRoad && position ? <LiveMap initial={position} highlightStopId={next.boardStop.id} /> : null}
+          {/* The rest of the panel is the line itself, with the bus on it —
+              which is the real answer to "how close is it getting to me". */}
+          <Rail view={next} progress={progress} />
 
           {next.trip.trip.delayMinutes > 0 ? (
-            <Card className="flex items-start gap-3 border-amber/40 bg-amber-soft px-4 py-3.5">
-              <AlertIcon className="mt-0.5 size-5 shrink-0 text-amber" />
-              <div>
-                <p className="text-base font-semibold text-amber">
-                  Running {next.trip.trip.delayMinutes} minutes late
-                </p>
-                <p className="mt-0.5 text-sm text-amber">The time above already includes it.</p>
-              </div>
-            </Card>
+            <p className="flex shrink-0 items-center gap-2 rounded-2xl bg-white/15 px-3.5 py-2.5 text-sm font-semibold text-white">
+              <AlertIcon className="size-4 shrink-0" />
+              Running {next.trip.trip.delayMinutes} minutes late — the times above count it
+            </p>
           ) : null}
+        </div>
+      </HeroCard>
 
-          {upcoming.length > 1 ? (
-            <Card className="px-5 py-4">
-              <Eyebrow>After that</Eyebrow>
-              <ul className="mt-2 space-y-2">
-                {upcoming.slice(1, 3).map((b) => (
-                  <li key={b.booking.id} className="flex items-baseline gap-3">
-                    <span className="tabular w-14 shrink-0 text-lg font-bold text-body">
-                      {b.boardTime}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-base text-muted">
-                      {b.boardStop.name} → {b.alightStop.name}
-                    </span>
-                    <span className="shrink-0 text-sm text-faint">
-                      {shortDate(b.trip.trip.serviceDate, today)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ) : null}
-        </>
-      ) : (
-        <NothingBooked employeeStops={[employee.homeStopId, employee.workStopId]} now={now} />
-      )}
-    </div>
+      <PassCode code={next.booking.passCode} />
+
+      <Link
+        href={`/track/${next.trip.trip.id}`}
+        className="brand-wash glow flex min-h-16 shrink-0 items-center justify-center gap-3 rounded-[1.4rem] text-lg font-bold text-white transition-transform active:scale-[0.98]"
+      >
+        <PinIcon className="size-6" />
+        Where is it now?
+      </Link>
+    </Screen>
   );
 }
 
 /**
  * The big number, chosen by how soon the bus is.
  *
- * Standing at a stage, "9" and "minutes away" is the only thing worth reading.
- * Tomorrow morning's bus is a different question, and the clock time answers
- * that one, so the same slot carries whichever is actually useful.
+ * Standing at a stop, "9" and "minutes away" is the only thing worth reading.
+ * Tomorrow morning's bus is a different question and the clock answers that
+ * one, so the same slot carries whichever is actually useful.
  */
-function Countdown({
-  boardsAt,
-  now,
-  boardTime,
-}: {
-  boardsAt: number;
-  now: Date;
-  boardTime: string;
-}) {
-  const minutes = Math.round((boardsAt - now.getTime()) / 60000);
-  const soon = minutes <= 90;
+function Countdown({ view, now }: { view: BookingView; now: Date }) {
+  const minutes = Math.round(
+    (view.trip.departsAt.getTime() + view.boardStop.adjustedMin * 60000 - now.getTime()) / 60000,
+  );
 
-  if (soon && minutes <= 0) {
+  if (minutes <= 0) {
     return (
       <div>
         <p className="flex items-center gap-3">
-          <span className="live-dot size-3 shrink-0 rounded-full bg-white" aria-hidden="true" />
-          <span className="clock text-white">Now</span>
+          <span className="live-dot size-4 shrink-0 rounded-full bg-white" aria-hidden="true" />
+          <span className="clock text-white">Here</span>
         </p>
-        <p className="mt-1 text-xl font-semibold text-white/85">At your stage</p>
+        <p className="mt-1 text-xl font-semibold text-white/80">Get on now</p>
       </div>
     );
   }
 
-  if (soon) {
+  if (minutes <= 90) {
     return (
       <div>
         <p className="flex items-baseline gap-3">
           <span className="clock text-white">{minutes}</span>
-          <span className="text-2xl font-semibold text-white/85">
+          <span className="text-2xl font-semibold text-white/80">
             {minutes === 1 ? "minute" : "minutes"}
           </span>
         </p>
-        <p className="tabular mt-1 text-xl font-semibold text-white/85">
-          away · boards {boardTime}
-        </p>
+        <p className="mt-1 text-xl font-semibold text-white/80">until it reaches you</p>
       </div>
     );
   }
 
   return (
     <div>
-      <p className="clock text-white">{boardTime}</p>
-      <p className="mt-1 text-xl font-semibold text-white/85">{longWait(minutes)}</p>
+      <p className="clock text-white">{view.boardTime}</p>
+      <p className="mt-1 text-xl font-semibold text-white/80">{longWait(minutes)}</p>
+    </div>
+  );
+}
+
+/**
+ * The line, drawn down the panel, with the bus on it.
+ *
+ * A countdown says how long; this says how close, which is the thing people
+ * actually crane their necks for. Your two stops are the bright ones — the
+ * rest are the stops between the bus and you, and the marker slides down the
+ * rail as the bus works through them.
+ */
+function Rail({ view, progress }: { view: BookingView; progress: number }) {
+  const stops = view.trip.timetable;
+  const boardIndex = stops.findIndex((s) => s.id === view.boardStop.id);
+  const alightIndex = stops.findIndex((s) => s.id === view.alightStop.id);
+
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col justify-between py-1">
+      {/* The rail, and the part of it the bus has already covered. */}
+      <span
+        aria-hidden="true"
+        className="absolute bottom-3 left-[5px] top-3 w-0.5 rounded-full bg-white/25"
+      />
+      <span
+        aria-hidden="true"
+        className="absolute left-[5px] top-3 w-0.5 rounded-full bg-white"
+        style={{ height: `calc(${Math.min(100, Math.max(0, progress * 100))}% - 1.5rem)` }}
+      />
+
+      {stops.map((stop, index) => {
+        const mine = index === boardIndex || index === alightIndex;
+        const onMyLeg = index >= boardIndex && index <= alightIndex;
+
+        return (
+          <div key={stop.id} className="relative flex items-center gap-3">
+            <span className="flex w-3 shrink-0 justify-center">
+            <span
+              className={`z-10 shrink-0 rounded-full ${
+                mine ? "size-3 bg-white" : onMyLeg ? "size-2.5 bg-white/70" : "size-2 bg-white/35"
+              }`}
+              aria-hidden="true"
+              />
+            </span>
+            <span
+              className={`min-w-0 flex-1 truncate ${
+                mine
+                  ? "text-base font-bold text-white"
+                  : onMyLeg
+                    ? "text-sm text-white/75"
+                    : "text-sm text-white/45"
+              }`}
+            >
+              {stop.name}
+              {index === boardIndex ? " · get on" : index === alightIndex ? " · get off" : ""}
+            </span>
+            <span
+              className={`tabular shrink-0 text-sm ${
+                mine ? "font-bold text-white" : "text-white/50"
+              }`}
+            >
+              {stop.time}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 async function NothingBooked({
-  employeeStops,
+  home,
+  work,
   now,
 }: {
-  employeeStops: [string | null, string | null];
+  home: string | null;
+  work: string | null;
   now: Date;
 }) {
-  const [home, work] = employeeStops;
   const today = nairobiDate(now);
-  const next =
+  const soonest =
     home && work
       ? nextDeparturesFor(home, work, nextServiceDate(today), now, 1).suggestions[0]
       : undefined;
 
   return (
     <EmptyTab
-      icon={<BusIcon className="size-7" />}
-      title="No bus booked"
-      cta={{ href: "/routes", label: next ? "Catch the next one" : "See the lines" }}
+      icon={<BusIcon className="size-8" />}
+      title="No bus yet"
+      cta={{ href: "/routes", label: soonest ? "Catch the next one" : "See what's running" }}
     >
-      {next
-        ? `The next one on your commute leaves at ${next.trip.trip.departTime}.`
-        : "Pick a departure and your place is held."}
+      {soonest
+        ? `The next one going your way leaves at ${soonest.trip.trip.departTime}.`
+        : "Pick a bus and it will show up here."}
     </EmptyTab>
   );
 }
 
-type NextTrip = Awaited<ReturnType<typeof listBookingsForEmployee>>[number];
-
-/** When the bus reaches *this rider's* stage, not when it leaves the terminus. */
-function boardingTime(b: NextTrip): number {
-  return b.trip.departsAt.getTime() + b.boardStop.adjustedMin * 60000;
-}
-
 function longWait(minutes: number): string {
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `In about ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  if (hours < 24) return `in about ${hours} ${hours === 1 ? "hour" : "hours"}`;
   const days = Math.round(hours / 24);
-  return days === 1 ? "Tomorrow" : `In ${days} days`;
-}
-
-function shortDate(serviceDate: string, today: string): string {
-  if (serviceDate === today) return "Today";
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Africa/Nairobi",
-    weekday: "short",
-  }).format(new Date(`${serviceDate}T12:00:00Z`));
+  return days === 1 ? "tomorrow" : `in ${days} days`;
 }
 
 function firstName(name: string): string {

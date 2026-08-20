@@ -24,7 +24,7 @@
  */
 @theme {
   /* Surfaces, lightest to deepest */
-  --color-ink: #ffffff;
+  --color-ink: #f7f2fd;
   --color-surface: #ffffff;
   --color-raised: #f5f2fa;
   --color-line: #eae7f1;
@@ -87,7 +87,7 @@
  */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-ink: #0b0022;
+    --color-ink: #06001a;
     --color-surface: #150a33;
     --color-raised: #1e1140;
     --color-line: #2c2150;
@@ -117,7 +117,7 @@
 }
 
 :root[data-theme="dark"] {
-    --color-ink: #0b0022;
+    --color-ink: #06001a;
     --color-surface: #150a33;
     --color-raised: #1e1140;
     --color-line: #2c2150;
@@ -160,13 +160,163 @@ html {
 }
 
 body {
-  background:
-    radial-gradient(1100px 620px at 82% -8%, color-mix(in srgb, var(--color-brand-bright) 12%, transparent) 0%, transparent 58%),
-    radial-gradient(900px 500px at 8% 0%, color-mix(in srgb, var(--color-deep) 7%, transparent) 0%, transparent 52%),
-    var(--color-ink);
+  background: var(--color-ink);
   color: var(--color-body);
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * The aurora.
+ *
+ * Three soft lamps of brand colour drifting behind everything, fixed to the
+ * viewport rather than the page so they never scroll away. This is where the
+ * app gets its depth: every surface above is translucent, so the colour that
+ * shows through the glass is coming from here, and it is never quite the same
+ * from one part of the screen to another.
+ */
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.aurora::before,
+.aurora::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: var(--aurora-strength, 0.5);
+}
+
+.aurora::before {
+  width: 70vmax;
+  height: 70vmax;
+  top: -28vmax;
+  right: -22vmax;
+  background: radial-gradient(circle, var(--color-brand-bright) 0%, transparent 68%);
+  animation: aurora-drift-a 26s ease-in-out infinite alternate;
+}
+
+.aurora::after {
+  width: 58vmax;
+  height: 58vmax;
+  bottom: -24vmax;
+  left: -20vmax;
+  background: radial-gradient(circle, var(--color-brand) 0%, transparent 68%);
+  animation: aurora-drift-b 32s ease-in-out infinite alternate;
+}
+
+:root {
+  --aurora-strength: 0.22;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --aurora-strength: 0.4;
+  }
+}
+
+:root[data-theme="dark"] {
+  --aurora-strength: 0.4;
+}
+
+@keyframes aurora-drift-a {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(-8vmax, 6vmax, 0) scale(1.12); }
+}
+
+@keyframes aurora-drift-b {
+  from { transform: translate3d(0, 0, 0) scale(1.08); }
+  to   { transform: translate3d(7vmax, -5vmax, 0) scale(1); }
+}
+
+/*
+ * Glass.
+ *
+ * A panel that lets the aurora through rather than sitting on top of it, with
+ * a hairline of light along its upper edge — the thing that makes a flat
+ * rectangle read as a pane with a thickness. Every card in the rider and
+ * driver apps is one of these.
+ */
+.glass {
+  background: var(--glass-fill);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-sheen),
+    0 18px 40px -24px rgba(1, 1, 52, 0.5);
+}
+
+:root {
+  --glass-fill: rgba(255, 255, 255, 0.66);
+  --glass-edge: rgba(255, 255, 255, 0.9);
+  --glass-sheen: rgba(255, 255, 255, 0.95);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --glass-fill: rgba(255, 255, 255, 0.055);
+    --glass-edge: rgba(255, 255, 255, 0.11);
+    --glass-sheen: rgba(255, 255, 255, 0.14);
+  }
+}
+
+:root[data-theme="dark"] {
+  --glass-fill: rgba(255, 255, 255, 0.055);
+  --glass-edge: rgba(255, 255, 255, 0.11);
+  --glass-sheen: rgba(255, 255, 255, 0.14);
+}
+
+/* The one button on a screen that you are meant to press. */
+.glow {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-brand-bright) 45%, transparent),
+    0 8px 30px -6px color-mix(in srgb, var(--color-brand-bright) 60%, transparent);
+}
+
+/*
+ * The whole app, exactly one screen tall.
+ *
+ * A rider is switching tabs, not reading a document, so the page itself never
+ * scrolls: the shell is the viewport, the header and the tab dock are fixed
+ * heights, and the panel between them takes whatever is left. Anything longer
+ * than that scrolls inside its own card, which is a different gesture and does
+ * not move the furniture.
+ */
+.app-shell {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /*
+   * The three tabs are built to fit exactly, so this never fires for them.
+   * It is here for the screens you reach *from* a tab — the live map, the
+   * booking sheet, the account — which are ordinary documents and would
+   * otherwise be clipped by a shell that refuses to scroll.
+   */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* A list that ran longer than its slot, faded out rather than chopped off. */
+.inner-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 20px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 20px), transparent 100%);
 }
 
 /* Numeric columns line up only if the digits are the same width. */

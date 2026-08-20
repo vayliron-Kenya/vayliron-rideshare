@@ -64,8 +64,20 @@ export function AppNav(props: NavProps) {
   const rider = props.kind === "employee";
 
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-ink/85 backdrop-blur-md">
-      <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
+    <header
+      className={
+        rider
+          ? "shrink-0 px-4 pt-3"
+          : "sticky top-0 z-30 border-b border-line bg-ink/85 backdrop-blur-md"
+      }
+    >
+      <div
+        className={
+          rider
+            ? "mx-auto flex w-full max-w-lg items-center gap-3"
+            : "mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3 sm:px-6"
+        }
+      >
         <Link
           href={rider ? "/dashboard" : (links[0]?.href ?? "/")}
           className="flex shrink-0 items-center gap-2.5"
@@ -113,7 +125,7 @@ export function AppNav(props: NavProps) {
             <Link
               href="/me"
               aria-label="Your account"
-              className="flex size-10 items-center justify-center rounded-full border-2 border-edge text-sm font-bold text-body transition-colors hover:border-brand hover:text-accent"
+              className="glass flex size-11 items-center justify-center rounded-full text-sm font-bold text-body transition-colors hover:text-accent"
             >
               {initials(props.name)}
             </Link>
