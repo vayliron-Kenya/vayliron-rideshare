@@ -179,8 +179,15 @@ describe("telling a driver whether to move", () => {
   });
 
   it("does not talk in hundreds of minutes", () => {
-    // Tomorrow's run, opened tonight.
-    expect(cueAt(minutesBefore(686)).headline).toBe("Hold 11 hours");
+    // Two hours out: still a wait a driver is actually sitting through.
+    expect(cueAt(minutesBefore(120)).headline).toBe("Hold 2 hours");
+  });
+
+  it("stops saying hold once the run is not today's problem", () => {
+    // Tomorrow's run, opened tonight. Nobody is sitting at the wheel.
+    const cue = cueAt(minutesBefore(686));
+    expect(cue.headline).toBe("Not yet · 06:30");
+    expect(cue.detail).toContain("11 hours");
   });
 
   it("keeps talking about the terminus when a run was started early", () => {

@@ -28,10 +28,12 @@ export default async function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const principal = await getPrincipal();
 
-  // The rider app is a fixed-height shell: three tabs, each exactly one screen,
-  // and the page itself never scrolls. Staff surfaces are documents you read
-  // top to bottom, so they keep the ordinary flowing layout.
+  // The two phone surfaces — rider and driver — are fixed-height shells: tabs,
+  // each exactly one screen, and the page itself never scrolls. The desktop
+  // control panels are documents you read top to bottom, so they keep the
+  // ordinary flowing layout.
   const rider = principal?.kind === "employee";
+  const phone = rider || principal?.kind === "driver";
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -39,7 +41,7 @@ export default async function RootLayout({
         {/* Applies a pinned theme before first paint, so it never flashes. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
-      <body className={`font-sans antialiased ${rider ? "app-shell" : ""}`}>
+      <body className={`font-sans antialiased ${phone ? "app-shell" : ""}`}>
         {/* Everything above is translucent; this is the colour it lets through. */}
         <div className="aurora" aria-hidden="true" />
 
@@ -51,10 +53,10 @@ export default async function RootLayout({
           isNetworkAdmin={principal?.kind === "operator" && principal.operator.role === "superadmin"}
         />
 
-        {rider ? (
+        {phone ? (
           <>
-            <main className="app-panel mx-auto w-full max-w-lg px-4 pt-3">{children}</main>
-            <RiderTabs />
+            <main className="app-panel mx-auto w-full max-w-lg px-4 pb-3 pt-3">{children}</main>
+            {rider ? <RiderTabs /> : null}
           </>
         ) : (
           <>

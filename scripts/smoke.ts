@@ -193,6 +193,12 @@ async function main() {
    * ---------------------------------------------------------------- */
 
   await page.goto(`${BASE}/drive/${tripId}`, { waitUntil: "networkidle" });
+  // The run is four tabs now — checking someone in lives under Riders.
+  const openTab = async (name: string) => {
+    await page.getByRole("tab", { name: new RegExp(`^${name}`) }).click();
+    await page.waitForTimeout(250);
+  };
+  await openTab("Riders");
   await page.fill("#passCode", passCode);
   await page.getByRole("button", { name: "Board", exact: true }).click();
   // Scoped to the form's own banner: Next.js renders an empty role="alert"
@@ -209,6 +215,7 @@ async function main() {
   check("the same pass is refused a second time", second.includes("already been scanned"), second.trim());
 
   // Call a stage, which is how a run reports its own progress.
+  await openTab("Line");
   const arrived = page.getByRole("button", { name: "Arrived" }).first();
   if ((await arrived.count()) > 0) {
     await arrived.click();

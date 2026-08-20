@@ -34,9 +34,9 @@ function linksFor(props: NavProps): NavLink[] {
     return links;
   }
 
-  if (props.kind === "driver") {
-    return [{ href: "/drive", label: "My runs" }];
-  }
+  // A driver's screen is a fixed-height shell with its own back link, so a
+  // duplicate "My runs" pill in the chrome is one control too many.
+  if (props.kind === "driver") return [];
 
   if (props.kind === "owner") {
     return [
@@ -62,18 +62,19 @@ export function AppNav(props: NavProps) {
   const links = linksFor(props);
   const area = props.kind ? AREA_LABEL[props.kind] : "";
   const rider = props.kind === "employee";
+  const phone = rider || props.kind === "driver";
 
   return (
     <header
       className={
-        rider
+        phone
           ? "shrink-0 px-4 pt-3"
           : "sticky top-0 z-30 border-b border-line bg-ink/85 backdrop-blur-md"
       }
     >
       <div
         className={
-          rider
+          phone
             ? "mx-auto flex w-full max-w-lg items-center gap-3"
             : "mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3 sm:px-6"
         }

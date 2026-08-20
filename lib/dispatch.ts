@@ -124,11 +124,21 @@ export function departureCue(trip: TripSummary, stages: StageCall[], now = new D
   if (status === "scheduled" || status === "boarding" || beforeDeparture) {
     const slack = Math.round((trip.departsAt.getTime() - now.getTime()) / 60000);
 
+    // Past a few hours "hold" is the wrong word — nobody is sitting at the
+    // wheel waiting. The run simply has not come round yet.
+    if (slack > 360) {
+      return {
+        cue: "hold",
+        headline: `Not yet · ${trip.trip.departTime}`,
+        detail: `This run is ${spanWords(slack)} away. Nothing to do on it until then.`,
+        slackMinutes: slack,
+      };
+    }
     if (slack > 5) {
       return {
         cue: "hold",
         headline: `Hold ${spanWords(slack)}`,
-        detail: `Leave at ${trip.trip.departTime}. Going early strands anyone still walking to the stage.`,
+        detail: `Leave at ${trip.trip.departTime}. Going early strands anyone still walking to the stop.`,
         slackMinutes: slack,
       };
     }

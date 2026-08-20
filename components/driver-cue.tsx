@@ -12,7 +12,7 @@ import type { DepartureCue, SiblingBus, StageCall } from "@/lib/dispatch";
  */
 
 const CUE_SKIN: Record<DepartureCue["cue"], string> = {
-  hold: "bg-amber-soft border-amber/40 text-amber",
+  hold: "border-amber/40 bg-amber-soft text-amber",
   go: "brand-wash border-transparent text-white",
   late: "bg-flame-soft border-flame/40 text-flame",
   done: "bg-raised border-edge text-muted",
@@ -29,7 +29,7 @@ export function DriverCue({
 }) {
   return (
     <section className="space-y-3">
-      <div className={`rounded-3xl border-2 p-5 ${CUE_SKIN[cue.cue]}`}>
+      <div className={`rounded-[1.4rem] border p-4 ${CUE_SKIN[cue.cue]}`}>
         <p
           className={`text-xs font-bold uppercase tracking-[0.16em] ${
             cue.cue === "go" ? "text-white/70" : "opacity-70"
@@ -43,13 +43,15 @@ export function DriverCue({
                 ? "Run state"
                 : "Next"}
         </p>
-        <p className="mt-1 text-3xl font-bold leading-tight tracking-tight">{cue.headline}</p>
-        <p className={`mt-1.5 text-base leading-relaxed ${cue.cue === "go" ? "text-white/85" : ""}`}>
+        <p className="mt-0.5 text-[1.75rem] font-bold leading-tight tracking-tight">
+          {cue.headline}
+        </p>
+        <p className={`mt-1 text-sm leading-relaxed ${cue.cue === "go" ? "text-white/85" : ""}`}>
           {cue.detail}
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-2.5">
         <StageTile
           kind="Pick up"
           icon={<PinIcon className="size-5" />}
@@ -89,31 +91,26 @@ function StageTile({
   const accent = tone === "brand" ? "bg-brand-soft text-accent" : "bg-flame-soft text-flame";
 
   return (
-    <div className="rounded-2xl border border-line bg-surface/80 p-4">
-      <div className="flex items-center gap-2.5">
-        <span className={`flex size-8 items-center justify-center rounded-lg ${accent}`}>
+    <div className="glass rounded-2xl p-3.5">
+      <div className="flex items-center gap-2">
+        <span className={`flex size-7 items-center justify-center rounded-lg ${accent}`}>
           {icon}
         </span>
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-faint">{kind}</p>
+        <p className="text-[0.66rem] font-bold uppercase tracking-[0.16em] text-faint">{kind}</p>
       </div>
 
       {stage ? (
         <>
-          <p className="mt-2.5 truncate text-xl font-bold tracking-tight text-body">
-            {stage.name}
-          </p>
-          <p className="truncate text-sm text-muted">{stage.landmark}</p>
-          <p className="tabular mt-2 flex items-center gap-2 text-sm text-body">
-            <ClockIcon className="size-4 shrink-0 text-faint" />
+          <p className="mt-2 truncate text-lg font-bold tracking-tight text-body">{stage.name}</p>
+          <p className="tabular mt-1 flex items-center gap-1.5 text-sm text-body">
+            <ClockIcon className="size-3.5 shrink-0 text-faint" />
             {stage.time}
             <span className="text-faint">·</span>
-            <span className="font-semibold">
-              {count} {count === 1 ? "person" : "people"}
-            </span>
+            <span className="font-semibold">{count}</span>
           </p>
         </>
       ) : (
-        <p className="mt-2.5 text-base leading-relaxed text-muted">{empty}</p>
+        <p className="mt-2 text-sm leading-relaxed text-muted">{empty}</p>
       )}
     </div>
   );
@@ -138,7 +135,7 @@ export function CorridorStrip({
   toName: string;
 }) {
   return (
-    <div className="rounded-2xl border border-line bg-surface/80 p-4 sm:p-5">
+    <div className="glass rounded-2xl p-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-body">Others on this line</h2>
         <span className="text-xs text-faint">
@@ -148,20 +145,20 @@ export function CorridorStrip({
         </span>
       </div>
 
-      <div className="relative mt-6 mb-2 h-2 rounded-full bg-raised">
+      <div className="relative mb-2 mt-6 h-2 rounded-full bg-[var(--glass-edge)]">
         <span className="absolute inset-y-0 left-0 w-full rounded-full bg-gradient-to-r from-brand-soft to-transparent" />
 
         {others.map((bus) => (
           <span
             key={bus.tripId}
-            className="absolute -top-1 size-4 -translate-x-1/2 rounded-full border-2 border-surface bg-muted"
+            className="absolute -top-1 size-4 -translate-x-1/2 rounded-full border-2 border-ink bg-muted"
             style={{ left: `${clamp(bus.progressPct)}%` }}
             title={`${bus.plate} · ${bus.driverName}`}
           />
         ))}
 
         <span
-          className="absolute -top-2 flex size-6 -translate-x-1/2 items-center justify-center rounded-full border-2 border-surface bg-brand text-on-brand"
+          className="brand-wash glow absolute -top-2 flex size-6 -translate-x-1/2 items-center justify-center rounded-full text-white"
           style={{ left: `${clamp(mine)}%` }}
           title="You"
         >
@@ -175,7 +172,7 @@ export function CorridorStrip({
       </div>
 
       {others.length > 0 ? (
-        <ul className="mt-4 divide-y divide-line">
+        <ul className="mt-4 divide-y divide-[var(--glass-edge)]">
           {others.map((bus) => (
             <li key={bus.tripId} className="flex items-center gap-3 py-2.5">
               <span className="tabular w-14 shrink-0 text-sm font-semibold text-body">
@@ -192,9 +189,7 @@ export function CorridorStrip({
               </span>
               <span
                 className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                  bus.gapPct > 0
-                    ? "bg-raised text-muted"
-                    : "bg-amber-soft text-amber"
+                  bus.gapPct > 0 ? "glass text-muted" : "bg-amber-soft text-amber"
                 }`}
               >
                 {gapLabel(bus.gapPct)}
