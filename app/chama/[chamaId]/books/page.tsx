@@ -3,10 +3,12 @@ import { notFound, redirect } from "next/navigation";
 import {
   announceAction,
   assignRoleAction,
+  closeChamaAction,
   createRequestAction,
   decideReceiptAction,
   decideRequestAction,
   executeRequestAction,
+  startDistributionAction,
   submitReceiptAction,
 } from "@/app/chama-actions";
 import { ActionForm, Field, SelectField, TextAreaField } from "@/components/action-form";
@@ -19,6 +21,7 @@ import {
   getMember,
   groupDashboard,
   ledger,
+  mayExecute,
   RAILS,
   signatoriesFor,
   whoFromActor,
@@ -49,7 +52,7 @@ export default async function BooksPage({ params }: { params: Promise<{ chamaId:
   const { chama } = view;
   const features = categoryFor(chama.category).features;
   const m = (minor: number) => formatMoney(minor, chama.currency);
-  const names = new Map(view.members.map((x) => [x.key, x.name]));
+  const names = new Map([...view.members, ...view.exited].map((x) => [x.key, x.name]));
   const nameOf = (key: string) => names.get(key) ?? "Former member";
   const signatories = signatoriesFor(chamaId);
   const collection = view.expectedMinor === 0 ? 0 : Math.round((view.collectedMinor / view.expectedMinor) * 100);
@@ -100,8 +103,170 @@ export default async function BooksPage({ params }: { params: Promise<{ chamaId:
           )}
         </div>
         <Figure label="Arrears" value={m(view.arrearsMinor)} hint={`${view.members.filter((x) => x.standing.arrearsMinor > 0).length} members behind`} />
-        <Figure label="Loans outstanding" value={m(view.loansOutstandingMinor)} hint="Principal and interest still owed" />
+        <Figure
+          label="Loans outstanding"
+          value={m(view.loansOutstandingMinor)}
+          hint={view.loansOverdueMinor > 0 ? `${m(view.loansOverdueMinor)} overdue` : "Principal and interest; nothing overdue"}
+        />
       </section>
+
+      {view.distribution ? (
+        <Card className="border-amber/50">
+          <CardHeader
+            title="Winding up"
+            subtitle="Members voted to dissolve. Collect every loan, then pay the balance out in proportion to savings — each payment signed like any other."
+          />
+          <div className="space-y-4 p-5">
+            <table className="w-full whitespace-nowrap text-sm">
+              <thead className="text-left text-xs uppercase tracking-wider text-faint">
+                <tr><th className="py-1">Member</th><th className="py-1 text-right">Share of {m(view.balanceMinor)}</th></tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {view.distribution.map((d) => (
+                  <tr key={d.key}><td className="py-1.5 text-body">{nameOf(d.key)}</td><td className="tabular py-1.5 text-right text-body">{m(d.amountMinor)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="flex flex-wrap gap-3">
+              {can(member.role, "start_payout") && view.balanceMinor > 0 && view.loansOutstandingMinor === 0 && view.openRequests.length === 0 ? (
+                <ActionForm action={startDistributionAction} submit="Start the final distribution">
+                  {hidden("chamaId", chamaId)}
+                </ActionForm>
+              ) : null}
+              {view.loansOutstandingMinor > 0 ? (
+                <p className="text-sm text-muted">
+                  {m(view.loansOutstandingMinor)} in loans is still owed. It has to be repaid before anything is distributed or the group closes.
+                </p>
+              ) : null}
+              {member.role === "chairperson" && view.balanceMinor === 0 && view.loansOutstandingMinor === 0 && view.openRequests.length === 0 ? (
+                <ActionForm action={closeChamaAction} submit="Close the chama" tone="flame">
+                  {hidden("chamaId", chamaId)}
+                </ActionForm>
+              ) : null}
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+        <Card>
+          <CardHeader title="Next 30 days" />
+          {view.upcoming.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-faint">Nothing falls due.</p>
+          ) : (
+            <ul className="divide-y divide-line text-sm">
+              {view.upcoming.map((u, i) => (
+                <li key={i} className="flex items-center justify-between gap-3 px-5 py-2.5">
+                  <span className="text-body">{when(u.on)} · {u.label}</span>
+                  <span className="tabular text-muted">{m(u.amountMinor)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card className="p-5">
+          <p className="text-xs font-medium uppercase tracking-wider text-faint">Group goal</p>
+          {view.target ? (
+            <>
+              <p className="tabular mt-2 text-xl font-semibold text-body">{(view.target.progressBps / 100).toFixed(0)}%</p>
+              <Meter pct={view.target.progressBps / 100} className="mt-2" />
+              <p className="mt-1 text-xs text-muted">
+                {m(view.balanceMinor)} of {m(view.target.targetMinor)}{view.target.targetDate ? ` by ${when(view.target.targetDate)}` : ""}
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-faint">No savings target set. Members can add one by amending the constitution.</p>
+          )}
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader
+          title="Collections by period"
+          subtitle="How many members owed each contribution, and how many have covered it. Payments cover the oldest period first."
+        />
+        {view.collections.length === 0 ? (
+          <p className="px-5 py-4 text-sm text-faint">No contribution has fallen due yet. The first is {when(chama.anchorDate)}.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full whitespace-nowrap text-sm">
+              <thead className="text-left text-xs uppercase tracking-wider text-faint">
+                <tr><th className="px-5 py-2">Due</th><th className="px-5 py-2 text-right">Paid up</th><th className="px-5 py-2">Collected</th></tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {view.collections.map((c) => {
+                  const pct = c.liable === 0 ? 100 : Math.round((c.paidUp / c.liable) * 100);
+                  return (
+                    <tr key={c.index}>
+                      <td className="px-5 py-2 text-body">{when(c.dueOn)}</td>
+                      <td className="tabular px-5 py-2 text-right text-muted">{c.paidUp} of {c.liable}</td>
+                      <td className="px-5 py-2"><Meter pct={pct} tone={pct < 80 ? "amber" : "brand"} className="w-24" /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Income and outflows"
+          subtitle="All time, from the confirmed ledger."
+          action={
+            <a href={`/api/chama/${chamaId}/statement.csv?scope=group`} className="shrink-0 text-xs font-medium text-accent">
+              Download statement (CSV)
+            </a>
+          }
+        />
+        {view.statement.length === 0 ? (
+          <p className="px-5 py-4 text-sm text-faint">Nothing on the books yet.</p>
+        ) : (
+          <table className="w-full whitespace-nowrap text-sm">
+            <tbody className="divide-y divide-line">
+              {view.statement.map((l) => (
+                <tr key={`${l.direction}-${l.kind}`}>
+                  <td className="px-5 py-2 text-body">{KIND_LABEL[l.kind] ?? l.kind}</td>
+                  <td className="tabular px-5 py-2 text-xs text-faint">{l.entries} {l.entries === 1 ? "entry" : "entries"}</td>
+                  <td className={`tabular px-5 py-2 text-right ${l.direction === "in" ? "text-body" : "text-accent"}`}>
+                    {l.direction === "in" ? "+" : "−"}{m(l.totalMinor)}
+                  </td>
+                </tr>
+              ))}
+              <tr className="font-semibold">
+                <td className="px-5 py-2 text-body">Balance</td><td />
+                <td className="tabular px-5 py-2 text-right text-body">{m(view.balanceMinor)}</td>
+              </tr>
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      {view.loanBook.length ? (
+        <Card>
+          <CardHeader title="Loan book" subtitle="Every loan with something still owed." />
+          <div className="overflow-x-auto">
+            <table className="w-full whitespace-nowrap text-sm">
+              <thead className="text-left text-xs uppercase tracking-wider text-faint">
+                <tr><th className="px-5 py-2">Borrower</th><th className="px-5 py-2 text-right">Lent</th><th className="px-5 py-2 text-right">Repaid</th><th className="px-5 py-2 text-right">Left</th><th className="px-5 py-2 text-right">Overdue</th><th className="px-5 py-2">Next</th></tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {view.loanBook.map((l) => (
+                  <tr key={l.loan.id}>
+                    <td className="px-5 py-2 text-body">{nameOf(l.borrower)}</td>
+                    <td className="tabular px-5 py-2 text-right text-muted">{m(l.loan.amountMinor)}</td>
+                    <td className="tabular px-5 py-2 text-right text-muted">{m(l.repaidMinor)}</td>
+                    <td className="tabular px-5 py-2 text-right text-body">{m(l.outstandingMinor)}</td>
+                    <td className={`tabular px-5 py-2 text-right ${l.overdueMinor > 0 ? "text-flame" : "text-muted"}`}>{m(l.overdueMinor)}</td>
+                    <td className="px-5 py-2 text-xs text-muted">{l.nextInstallment ? `${when(l.nextInstallment.dueOn)} · ${m(l.nextInstallment.totalMinor)}` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader title="Payments waiting for confirmation" subtitle="Check each against the M-Pesa or bank statement. You can't confirm your own, or one you entered." />
@@ -147,7 +312,7 @@ export default async function BooksPage({ params }: { params: Promise<{ chamaId:
               const rules = { required: chama.approvalsRequired, requestedBy: r.requestedBy, beneficiary: r.beneficiary, signatories };
               const state = approvalState({ ...rules, decisions: r.decisions });
               const signed = r.decisions.some((d) => d.approver === me.key);
-              const mayExecute = r.status === "approved" && can(member.role, "execute_request") && r.beneficiary !== me.key && !outsideRules;
+              const canSend = r.status === "approved" && mayExecute(chamaId, member, r) && !outsideRules;
               return (
                 <div key={r.id} className="space-y-2 px-5 py-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -174,7 +339,7 @@ export default async function BooksPage({ params }: { params: Promise<{ chamaId:
                       </ActionForm>
                     </div>
                   ) : null}
-                  {mayExecute ? (
+                  {canSend ? (
                     <ActionForm action={executeRequestAction} submit="Record as sent" className="grid max-w-xl gap-3 sm:grid-cols-2">
                       {hidden("chamaId", chamaId)}{hidden("requestId", r.id)}
                       <SelectField label="Sent by" name="rail" options={RAILS.map((x) => ({ value: x.value, label: x.label }))} />
@@ -186,7 +351,7 @@ export default async function BooksPage({ params }: { params: Promise<{ chamaId:
             })}
           </div>
         )}
-        {features.rotation && can(member.role, "start_payout") ? (
+        {features.rotation && can(member.role, "start_payout") && chama.status !== "dissolving" ? (
           <div className="border-t border-line px-5 py-4">
             <ActionForm action={createRequestAction} submit={`Start payout for round ${(view.schedule[0]?.round ?? 0) + 1}`} tone="quiet">
               {hidden("chamaId", chamaId)}{hidden("kind", "payout")}
@@ -211,6 +376,7 @@ export default async function BooksPage({ params }: { params: Promise<{ chamaId:
                 {features.savings ? <th className="px-5 py-2 text-right">Savings</th> : null}
                 {features.lending ? <th className="px-5 py-2 text-right">Loan owed</th> : null}
                 <th className="px-5 py-2">Constitution</th>
+                <th className="px-5 py-2">Nominee</th>
                 {can(member.role, "assign_roles") ? <th className="px-5 py-2">Change role</th> : null}
               </tr>
             </thead>
@@ -227,6 +393,7 @@ export default async function BooksPage({ params }: { params: Promise<{ chamaId:
                   {features.savings ? <td className="tabular px-5 py-2 text-right text-muted">{m(x.savingsMinor)}</td> : null}
                   {features.lending ? <td className="tabular px-5 py-2 text-right text-muted">{m(x.owedMinor)}</td> : null}
                   <td className="px-5 py-2 text-xs text-muted">v{x.acknowledgedVersion}{x.acknowledgedVersion < chama.constitutionVersion ? " — not yet accepted" : ""}</td>
+                  <td className="px-5 py-2 text-xs text-muted">{x.nominee ? `${x.nominee.name} (${x.nominee.relation})${x.nominee.phone ? ` · ${x.nominee.phone}` : ""}` : "—"}</td>
                   {can(member.role, "assign_roles") ? (
                     <td className="px-5 py-2">
                       {x.key !== me.key && x.role !== "chairperson" ? (
@@ -246,8 +413,14 @@ export default async function BooksPage({ params }: { params: Promise<{ chamaId:
         </div>
       </Card>
 
+      {view.exited.length ? (
+        <p className="-mt-3 text-xs text-faint">
+          Left: {view.exited.map((x) => `${x.name}${x.exitedOn ? ` (${when(x.exitedOn)})` : ""}`).join(" · ")}. Their entries stay on the ledger.
+        </p>
+      ) : null}
+
       <div className="space-y-6">
-        {can(member.role, "confirm_receipt") ? (
+        {can(member.role, "confirm_receipt") && chama.status !== "dissolving" ? (
           <Card>
             <CardHeader title="Record a payment for a member" subtitle="Cash taken at a meeting, or a transfer you've seen. Another officer confirms it." />
             <div className="p-5">

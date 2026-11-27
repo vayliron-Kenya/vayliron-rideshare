@@ -4,9 +4,9 @@ import { redirect } from "next/navigation";
 import { findInviteAction } from "@/app/chama-actions";
 import { ActionForm, Field } from "@/components/action-form";
 import { RoleBadge, StatusBadge } from "@/components/chama";
-import { Card, CardHeader, EmptyState } from "@/components/ui";
+import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
 import { actorFrom, getPrincipal } from "@/lib/auth";
-import { listAllChamas, listChamasFor, whoFromActor } from "@/lib/chama";
+import { listAllChamas, listChamasFor, notificationsFor, whoFromActor } from "@/lib/chama";
 import { categoryFor, formatMoney } from "@/lib/domain/chama";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +64,7 @@ export default async function ChamaHome() {
 
   const me = whoFromActor(actorFrom(principal));
   const mine = listChamasFor(me.key);
+  const notices = notificationsFor(me.key);
 
   return (
     <div className="space-y-6">
@@ -83,6 +84,22 @@ export default async function ChamaHome() {
           Start a chama
         </Link>
       </header>
+
+      {notices.length ? (
+        <Card>
+          <CardHeader title="Needs your attention" subtitle="Worked out from each group's books, so it is never out of date." />
+          <ul className="divide-y divide-line">
+            {notices.map((n, i) => (
+              <li key={i}>
+                <Link href={n.href} className="flex items-center gap-3 px-5 py-3 text-sm hover:bg-raised/50">
+                  <Badge tone={n.tone}>{n.chamaName}</Badge>
+                  <span className="min-w-0 flex-1 text-body">{n.text}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
 
       {mine.length === 0 ? (
         <EmptyState

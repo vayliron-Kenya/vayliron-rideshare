@@ -334,7 +334,13 @@ CREATE TABLE IF NOT EXISTS chamas (
   loan_multiple_tenths INTEGER NOT NULL DEFAULT 30 CHECK (loan_multiple_tenths BETWEEN 0 AND 100),
   quorum_bps         INTEGER NOT NULL DEFAULT 5000 CHECK (quorum_bps BETWEEN 1 AND 10000),
   threshold_bps      INTEGER NOT NULL DEFAULT 6667 CHECK (threshold_bps BETWEEN 5001 AND 10000),
-  status             TEXT NOT NULL DEFAULT 'forming' CHECK (status IN ('forming', 'active', 'dissolved')),
+  -- A savings goal the whole group works towards. 0 = none.
+  savings_target_minor INTEGER NOT NULL DEFAULT 0 CHECK (savings_target_minor >= 0),
+  target_date        TEXT,
+  -- dissolving: members voted to wind up; loans are collected and the balance
+  -- paid back out, but nothing new comes in.
+  status             TEXT NOT NULL DEFAULT 'forming'
+                     CHECK (status IN ('forming', 'active', 'dissolving', 'dissolved')),
   created_by         TEXT NOT NULL,
   created_at         TEXT NOT NULL
 );
@@ -349,6 +355,12 @@ CREATE TABLE IF NOT EXISTS chama_members (
   joined_on        TEXT NOT NULL,            -- YYYY-MM-DD, decides the first contribution owed
   payout_position  INTEGER,                  -- place in a merry-go-round queue
   acknowledged_version INTEGER NOT NULL,     -- the constitution version they accepted
+  exited_on        TEXT,
+  -- Who receives the member's share if they die. Held for the officers; what
+  -- a court or the law of succession says still takes precedence.
+  nominee_name     TEXT,
+  nominee_phone    TEXT,
+  nominee_relation TEXT,
   PRIMARY KEY (chama_id, member_key)
 );
 CREATE INDEX IF NOT EXISTS idx_chama_members_key ON chama_members(member_key);
@@ -387,7 +399,7 @@ CREATE TABLE IF NOT EXISTS chama_receipts (
 CREATE TABLE IF NOT EXISTS chama_requests (
   id            TEXT PRIMARY KEY,
   chama_id      TEXT NOT NULL REFERENCES chamas(id) ON DELETE CASCADE,
-  kind          TEXT NOT NULL CHECK (kind IN ('payout', 'loan', 'withdrawal', 'welfare')),
+  kind          TEXT NOT NULL CHECK (kind IN ('payout', 'loan', 'withdrawal', 'welfare', 'exit', 'distribution')),
   beneficiary   TEXT NOT NULL,
   amount_minor  INTEGER NOT NULL CHECK (amount_minor > 0),
   reason        TEXT NOT NULL,
@@ -422,7 +434,8 @@ CREATE TABLE IF NOT EXISTS chama_ledger (
   member_key   TEXT NOT NULL,
   kind         TEXT NOT NULL CHECK (kind IN (
                  'contribution', 'entry_fee', 'late_fee', 'loan_repayment',
-                 'payout', 'loan_disbursement', 'withdrawal', 'welfare')),
+                 'payout', 'loan_disbursement', 'withdrawal', 'welfare',
+                 'exit_refund', 'distribution')),
   direction    TEXT NOT NULL CHECK (direction IN ('in', 'out')),
   amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
   rail         TEXT NOT NULL,
@@ -448,8 +461,10 @@ CREATE TABLE IF NOT EXISTS chama_proposals (
   chama_id       TEXT NOT NULL REFERENCES chamas(id) ON DELETE CASCADE,
   title          TEXT NOT NULL,
   body           TEXT NOT NULL,
-  kind           TEXT NOT NULL CHECK (kind IN ('general', 'amendment')),
+  kind           TEXT NOT NULL
+                 CHECK (kind IN ('general', 'amendment', 'chair', 'payout_order', 'dissolution')),
   amendment_body TEXT,
+  payload        TEXT,                      -- JSON: the candidate, or the proposed order
   created_by     TEXT NOT NULL,
   created_at     TEXT NOT NULL,
   closes_at      TEXT NOT NULL,

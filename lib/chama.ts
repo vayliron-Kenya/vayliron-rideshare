@@ -8,6 +8,12 @@ import {
   approvalPossible,
   approvalState,
   can,
+  collectionsByPeriod,
+  distributionShares,
+  exitSettlement,
+  loanOverdue,
+  reorderAllowed,
+  targetProgressBps,
   canSign,
   categoryFor,
   constitutionTemplate,
@@ -20,7 +26,6 @@ import {
   potSize,
   reserveFor,
   rotationSchedule,
-  roundsUntilTurn,
   standing,
   voteOutcome,
   voteSettled,
@@ -29,6 +34,7 @@ import {
   type ChamaRole,
   type Frequency,
   type Installment,
+  type PeriodCollection,
   type RotationSlot,
   type Standing,
 } from "@/lib/domain/chama";
@@ -119,7 +125,9 @@ export interface Chama {
   loanMultipleTenths: number;
   quorumBps: number;
   thresholdBps: number;
-  status: "forming" | "active" | "dissolved";
+  savingsTargetMinor: number;
+  targetDate: string | null;
+  status: "forming" | "active" | "dissolving" | "dissolved";
   createdBy: string;
   createdAt: string;
   constitutionVersion: number;
@@ -148,6 +156,8 @@ const toChama = (r: Row): Chama => ({
   loanMultipleTenths: r.loan_multiple_tenths as number,
   quorumBps: r.quorum_bps as number,
   thresholdBps: r.threshold_bps as number,
+  savingsTargetMinor: (r.savings_target_minor as number) ?? 0,
+  targetDate: (r.target_date as string) ?? null,
   status: r.status as Chama["status"],
   createdBy: r.created_by as string,
   createdAt: r.created_at as string,
@@ -178,6 +188,8 @@ export interface Member {
   joinedOn: string;
   payoutPosition: number | null;
   acknowledgedVersion: number;
+  exitedOn: string | null;
+  nominee: { name: string; phone: string; relation: string } | null;
 }
 
 const toMember = (r: Row): Member => ({
@@ -188,6 +200,10 @@ const toMember = (r: Row): Member => ({
   joinedOn: r.joined_on as string,
   payoutPosition: (r.payout_position as number) ?? null,
   acknowledgedVersion: r.acknowledged_version as number,
+  exitedOn: (r.exited_on as string) ?? null,
+  nominee: r.nominee_name
+    ? { name: r.nominee_name as string, phone: (r.nominee_phone as string) ?? "", relation: (r.nominee_relation as string) ?? "" }
+    : null,
 });
 
 export function listMembers(chamaId: string, includeExited = false): Member[] {
@@ -288,6 +304,7 @@ const toEntry = (r: Row): LedgerEntry => ({
 });
 
 export function ledger(chamaId: string, memberKey?: string, limit = 200): LedgerEntry[] {
+  // Statements ask for everything; screens ask for the most recent page.
   const rows = memberKey
     ? db()
         .prepare(`SELECT * FROM chama_ledger WHERE chama_id = ? AND member_key = ? ORDER BY at DESC, id DESC LIMIT ?`)
@@ -342,6 +359,8 @@ export interface NewChama {
   loanMultipleTenths: number;
   quorumBps: number;
   thresholdBps: number;
+  savingsTargetMinor?: number;
+  targetDate?: string | null;
 }
 
 function inviteCode(): string {
@@ -375,6 +394,9 @@ export function createChama(input: NewChama, founder: ChamaWho, today = nairobiD
     throw new ChamaError("There would never be enough officers to sign. Lower the signatures needed or raise the membership.");
   }
   if (input.anchorDate < today) throw new ChamaError("The first contribution date can't be in the past.");
+  if (input.targetDate && input.targetDate <= input.anchorDate) throw new ChamaError("The target date has to come after the first contribution.");
+  if (input.quorumBps < 1 || input.quorumBps > 10_000) throw new ChamaError("Quorum must be between 1% and 100%.");
+  if (input.thresholdBps <= 5000 || input.thresholdBps > 10_000) throw new ChamaError("A vote must need more than half to carry.");
   categoryFor(input.category);
 
   const id = `chm_${crypto.randomUUID().slice(0, 10)}`;
@@ -386,15 +408,17 @@ export function createChama(input: NewChama, founder: ChamaWho, today = nairobiD
         `INSERT INTO chamas (id, name, description, category, country, currency, visibility, invite_code,
            min_members, max_members, entry_fee_minor, contribution_minor, frequency, anchor_date,
            grace_days, late_fee_minor, approvals_required, reserve_bps, loan_rate_bps,
-           loan_multiple_tenths, quorum_bps, threshold_bps, status, created_by, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'forming',?,?)`,
+           loan_multiple_tenths, quorum_bps, threshold_bps, savings_target_minor, target_date,
+           status, created_by, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'forming',?,?)`,
       )
       .run(
         id, input.name, input.description, input.category, input.country, input.currency,
         input.visibility, inviteCode(), input.minMembers, input.maxMembers, input.entryFeeMinor,
         input.contributionMinor, input.frequency, input.anchorDate, input.graceDays,
         input.lateFeeMinor, input.approvalsRequired, input.reserveBps, input.loanRateBps,
-        input.loanMultipleTenths, input.quorumBps, input.thresholdBps, founder.key, now(),
+        input.loanMultipleTenths, input.quorumBps, input.thresholdBps,
+        input.savingsTargetMinor ?? 0, input.targetDate ?? null, founder.key, now(),
       );
     conn
       .prepare(`INSERT INTO chama_constitutions (chama_id, version, body, adopted_at, adopted_by) VALUES (?, 1, ?, ?, ?)`)
@@ -419,7 +443,9 @@ export function createChama(input: NewChama, founder: ChamaWho, today = nairobiD
  */
 export function joinChama(code: string, who: ChamaWho, acceptedVersion: number, today = nairobiDate()): Chama {
   const chama = getChamaByInvite(code);
-  if (!chama || chama.status === "dissolved") throw new ChamaError("That invitation code doesn't match an open chama.");
+  if (!chama || chama.status === "dissolved" || chama.status === "dissolving") {
+    throw new ChamaError("That invitation code doesn't match an open chama.");
+  }
   if (acceptedVersion !== chama.constitutionVersion) {
     throw new ChamaError("The constitution changed while you were reading it. Read the current version and accept again.");
   }
@@ -490,6 +516,13 @@ function requireChama(id: string): Chama {
   return chama;
 }
 
+/** New money in or out is closed once members have voted to dissolve. */
+function requireOperating(chama: Chama): void {
+  if (chama.status === "dissolving") {
+    throw new ChamaError("Members voted to dissolve this chama. Only loan repayments and the final distribution are taken now.");
+  }
+}
+
 function requireMember(chama: Chama, who: ChamaWho): Member {
   const member = getMember(chama.id, who.key);
   if (!member || member.status !== "active") throw new ChamaError(`You aren't a member of ${chama.name}.`);
@@ -527,6 +560,7 @@ export function submitReceipt(chamaId: string, who: ChamaWho, input: NewReceipt)
   if (input.memberKey !== who.key) {
     requirePermission(me, "confirm_receipt", "Only the treasurer or chairperson can record a payment for someone else.");
   }
+  if (input.kind !== "loan_repayment") requireOperating(chama);
   const payer = getMember(chamaId, input.memberKey);
   if (!payer || payer.status !== "active") throw new ChamaError("That person isn't an active member.");
   if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) throw new ChamaError("Enter an amount above zero.");
@@ -653,7 +687,7 @@ export function decideReceipt(receiptId: string, who: ChamaWho, decision: "confi
  * Money out — a request, signatures, then a recorded payment
  * ------------------------------------------------------------------ */
 
-export type RequestKind = "payout" | "loan" | "withdrawal" | "welfare";
+export type RequestKind = "payout" | "loan" | "withdrawal" | "welfare" | "exit" | "distribution";
 
 export interface ChamaRequest {
   id: string;
@@ -742,6 +776,42 @@ export function payoutOrder(chamaId: string): string[] {
   return listMembers(chamaId).map((m) => m.key);
 }
 
+/**
+ * Who is paid next, and after them. A merry-go-round pays everyone once per
+ * cycle, so the queue is everyone not yet paid this cycle in the agreed order,
+ * followed by everyone who has. Working from who has been paid — rather than
+ * from the round number — keeps the queue honest when someone leaves or the
+ * order is changed mid-cycle: nobody is paid twice and nobody is skipped.
+ */
+export function payoutQueue(chamaId: string): string[] {
+  const order = payoutOrder(chamaId);
+  if (order.length === 0) return [];
+  const counts = new Map(
+    (
+      db()
+        .prepare(
+          `SELECT beneficiary, COUNT(*) AS n FROM chama_requests
+            WHERE chama_id = ? AND kind = 'payout' AND status NOT IN ('rejected', 'withdrawn') GROUP BY beneficiary`,
+        )
+        .all(chamaId) as Row[]
+    ).map((r) => [r.beneficiary as string, r.n as number]),
+  );
+  const count = (k: string) => counts.get(k) ?? 0;
+  const min = Math.min(...order.map(count));
+  return [...order.filter((k) => count(k) === min), ...order.filter((k) => count(k) > min)];
+}
+
+function queueSlots(chama: Chama, limit: number): RotationSlot[] {
+  const round = nextRound(chama.id);
+  return payoutQueue(chama.id)
+    .slice(0, limit)
+    .map((memberKey, i) => ({
+      round: round + i,
+      memberKey,
+      dueOn: rotationSchedule([memberKey], chama.anchorDate, chama.frequency, round + i, 1)[0].dueOn,
+    }));
+}
+
 export interface LoanPosition {
   loan: ChamaRequest;
   schedule: Installment[];
@@ -774,7 +844,7 @@ export function memberLoans(chamaId: string, memberKey: string): LoanPosition[] 
 function memberSavings(chama: Chama, memberKey: string): number {
   if (!categoryFor(chama.category).features.savings) return 0;
   const s = sumsByKind(chama.id, memberKey);
-  return (s.contribution ?? 0) - (s.withdrawal ?? 0);
+  return (s.contribution ?? 0) - (s.withdrawal ?? 0) - (s.exit_refund ?? 0);
 }
 
 /** The pool not held back as the emergency reserve. */
@@ -805,6 +875,10 @@ export function createRequest(chamaId: string, who: ChamaWho, input: NewRequest)
   const chama = requireChama(chamaId);
   const me = requireMember(chama, who);
   const features = categoryFor(chama.category).features;
+  requireOperating(chama);
+  if (input.kind === "exit" || input.kind === "distribution") {
+    throw new ChamaError("Leaving and the final distribution have their own steps.");
+  }
   const reason = input.reason.trim();
   if (reason.length < 3) throw new ChamaError("Give a reason the officers can read.");
 
@@ -817,10 +891,10 @@ export function createRequest(chamaId: string, who: ChamaWho, input: NewRequest)
   if (input.kind === "payout") {
     if (!features.rotation) throw new ChamaError("This chama doesn't rotate a pot.");
     requirePermission(me, "start_payout", "Only the treasurer or chairperson starts a round's payout.");
-    const order = payoutOrder(chamaId);
+    const queue = payoutQueue(chamaId);
     round = nextRound(chamaId);
-    beneficiary = rotationSchedule(order, chama.anchorDate, chama.frequency, round, 1)[0].memberKey;
-    amount = potSize(chama.contributionMinor, order.length);
+    beneficiary = queue[0];
+    amount = potSize(chama.contributionMinor, queue.length);
   } else if (input.kind === "loan") {
     if (!features.lending) throw new ChamaError("This chama doesn't lend.");
     months = input.loanMonths ?? 0;
@@ -912,21 +986,33 @@ export function decideRequest(requestId: string, who: ChamaWho, decision: "appro
  * treasurer as recorder and a signatory as confirmer, so it still took two
  * people.
  */
+/**
+ * Who records an approved payment as sent: the treasurer — except when the
+ * money is going to the treasurer, when the chairperson does it. Without that
+ * exception a treasurer's own withdrawal or final share could never be paid.
+ */
+export function mayExecute(chamaId: string, me: Member, request: Pick<ChamaRequest, "beneficiary">): boolean {
+  if (request.beneficiary === me.key) return false;
+  if (can(me.role, "execute_request")) return true;
+  return me.role === "chairperson" && getMember(chamaId, request.beneficiary)?.role === "treasurer";
+}
+
 export function executeRequest(requestId: string, who: ChamaWho, rail: Rail, referenceInput: string): ChamaRequest {
   const request = getRequest(requestId);
   if (!request) throw new ChamaError("That request doesn't exist.");
   const chama = requireChama(request.chamaId);
   const me = requireMember(chama, who);
   requireCurrentRules(chama, me);
-  requirePermission(me, "execute_request", "Only the treasurer records that money has been sent.");
-  if (request.status !== "approved") throw new ChamaError("This hasn't been approved by enough officers yet.");
   if (request.beneficiary === who.key) throw new ChamaError("Another officer has to send money that's coming to you.");
+  if (!mayExecute(chama.id, me, request)) throw new ChamaError("Only the treasurer records that money has been sent.");
+  if (request.status !== "approved") throw new ChamaError("This hasn't been approved by enough officers yet.");
   const reference = normaliseReference(rail, referenceInput);
   if (!reference) throw new ChamaError(rail === "mpesa" ? "An M-Pesa code is 10 letters and numbers." : "Enter the payment reference.");
 
   const { balanceMinor, availableMinor } = groupAvailable(chama);
-  // Welfare is what the reserve is for; everything else leaves it alone.
-  const ceiling = request.kind === "welfare" ? balanceMinor : availableMinor;
+  // Welfare is what the reserve is for, and a leaver or a wind-up takes their
+  // share of it; everything else leaves the reserve alone.
+  const ceiling = ["welfare", "exit", "distribution"].includes(request.kind) ? balanceMinor : availableMinor;
   if (request.amountMinor > ceiling) {
     throw new ChamaError("The group's confirmed balance doesn't cover this yet. Confirm outstanding contributions first.");
   }
@@ -934,7 +1020,8 @@ export function executeRequest(requestId: string, who: ChamaWho, rail: Rail, ref
   const confirmer = request.decisions.find((d) => d.decision === "approve" && d.approver !== who.key)?.approver;
   if (!confirmer) throw new ChamaError("No other officer has signed this.");
 
-  const kind = request.kind === "loan" ? "loan_disbursement" : request.kind;
+  const kind =
+    request.kind === "loan" ? "loan_disbursement" : request.kind === "exit" ? "exit_refund" : request.kind;
   tx((conn) => {
     const changed = conn
       .prepare(`UPDATE chama_requests SET status = 'executed', executed_by = ?, executed_at = ?, rail = ?, reference = ? WHERE id = ? AND status = 'approved'`)
@@ -946,10 +1033,190 @@ export function executeRequest(requestId: string, who: ChamaWho, rail: Rail, ref
          VALUES (?, ?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(chama.id, request.beneficiary, kind, request.amountMinor, rail, reference, request.id, request.kind === "loan" ? request.id : null, who.key, confirmer, now());
+    if (request.kind === "exit") markExited(conn, chama.id, request.beneficiary);
   });
+  if (request.kind === "distribution") closeIfSettled(chama.id);
 
   audit(who, chama, `request.execute`, `${who.name} sent a ${request.kind} of ${formatMoney(request.amountMinor, chama.currency)} (${reference})`, { requestId });
   return getRequest(requestId)!;
+}
+
+/* ------------------------------------------------------------------ *
+ * Leaving, nominees and winding up
+ * ------------------------------------------------------------------ */
+
+type Conn = ReturnType<typeof db>;
+
+function markExited(conn: Conn, chamaId: string, memberKey: string): void {
+  conn
+    .prepare(
+      `UPDATE chama_members SET status = 'exited', role = 'member', payout_position = NULL, exited_on = ?
+        WHERE chama_id = ? AND member_key = ?`,
+    )
+    .run(nairobiDate(), chamaId, memberKey);
+}
+
+/** What leaving would mean for a member today. */
+export function exitPreview(chama: Chama, memberKey: string): { refundMinor: number; owesMinor: number; blockers: string[] } {
+  const member = getMember(chama.id, memberKey);
+  const blockers: string[] = [];
+  if (member?.role === "chairperson") blockers.push("The chair has to be handed over by a vote first.");
+  const owed = memberLoans(chama.id, memberKey).reduce((s, l) => s + l.outstandingMinor, 0);
+  if (owed > 0) blockers.push(`Repay the ${formatMoney(owed, chama.currency)} left on your loan.`);
+  const open = listRequests(chama.id, { beneficiary: memberKey, status: ["pending", "approved"] });
+  if (open.some((r) => r.kind === "exit")) {
+    blockers.push("Your request to leave is with the officers. You'll be marked as left once your refund is sent.");
+  } else if (open.length) {
+    blockers.push("Wait for your open request to be settled or refused.");
+  }
+  const sums = sumsByKind(chama.id, memberKey);
+  const settlement = exitSettlement(categoryFor(chama.category).features, {
+    savingsMinor: memberSavings(chama, memberKey),
+    contributedMinor: sums.contribution ?? 0,
+    receivedMinor: (sums.payout ?? 0) + (sums.exit_refund ?? 0),
+  });
+  if (settlement.owesMinor > 0) {
+    blockers.push(`You've received ${formatMoney(settlement.owesMinor, chama.currency)} more than you've paid in. Contribute that first.`);
+  }
+  return { ...settlement, blockers };
+}
+
+/**
+ * A member leaves. With nothing owed to them they leave at once; otherwise a
+ * refund request goes to the officers like any other money out, and they are
+ * marked as left when the treasurer records it sent.
+ */
+export function requestExit(chamaId: string, who: ChamaWho, reasonInput: string): ChamaRequest | null {
+  const chama = requireChama(chamaId);
+  requireMember(chama, who);
+  const preview = exitPreview(chama, who.key);
+  if (preview.blockers.length) throw new ChamaError(preview.blockers[0]);
+  const reason = reasonInput.trim() || "Leaving the group";
+
+  if (preview.refundMinor === 0) {
+    tx((conn) => markExited(conn, chamaId, who.key));
+    audit(who, chama, "exit", `${who.name} left ${chama.name}`);
+    return null;
+  }
+
+  const signers = { required: chama.approvalsRequired, requestedBy: who.key, beneficiary: who.key, signatories: signatoriesFor(chamaId) };
+  if (!approvalPossible(signers)) throw new ChamaError("There aren't enough other officers to sign your refund. The chairperson can appoint more.");
+  const id = `req_${crypto.randomUUID().slice(0, 12)}`;
+  db()
+    .prepare(
+      `INSERT INTO chama_requests (id, chama_id, kind, beneficiary, amount_minor, reason, requested_by, requested_at)
+       VALUES (?, ?, 'exit', ?, ?, ?, ?, ?)`,
+    )
+    .run(id, chamaId, who.key, preview.refundMinor, reason, who.key, now());
+  audit(who, chama, "request.exit", `${who.name} asked to leave with ${formatMoney(preview.refundMinor, chama.currency)} refunded`, { requestId: id });
+  return getRequest(id);
+}
+
+export function setNominee(chamaId: string, who: ChamaWho, nominee: { name: string; phone: string; relation: string } | null): void {
+  const chama = requireChama(chamaId);
+  requireMember(chama, who);
+  if (nominee && (nominee.name.trim().length < 2 || nominee.relation.trim().length < 2)) {
+    throw new ChamaError("Give the nominee's name and how they're related to you.");
+  }
+  db()
+    .prepare(`UPDATE chama_members SET nominee_name = ?, nominee_phone = ?, nominee_relation = ? WHERE chama_id = ? AND member_key = ?`)
+    .run(nominee?.name.trim() ?? null, nominee?.phone.trim() || null, nominee?.relation.trim() ?? null, chamaId, who.key);
+  // The nominee's details are personal; the trail records only that they changed.
+  audit(who, chama, "nominee", `${who.name} ${nominee ? "updated" : "removed"} their nominated beneficiary`);
+}
+
+/** What each member would receive if the balance were paid out today. */
+export function distributionPlan(chama: Chama): { key: string; amountMinor: number }[] {
+  const members = listMembers(chama.id);
+  const features = categoryFor(chama.category).features;
+  const weights = members.map((m) => {
+    const sums = sumsByKind(chama.id, m.key);
+    return {
+      key: m.key,
+      amountMinor: features.savings
+        ? memberSavings(chama, m.key)
+        : Math.max(0, (sums.contribution ?? 0) - (sums.payout ?? 0)),
+    };
+  });
+  return distributionShares(Math.max(0, groupBalance(chama.id)), weights);
+}
+
+/**
+ * Starts paying the balance back out after a vote to dissolve. Loans must be
+ * repaid first. One request per member goes to the officers; each still needs
+ * signatures from people other than its recipient.
+ */
+export function startDistribution(chamaId: string, who: ChamaWho): ChamaRequest[] {
+  const chama = requireChama(chamaId);
+  const me = requireMember(chama, who);
+  requirePermission(me, "start_payout", "Only the treasurer or chairperson starts the final distribution.");
+  if (chama.status !== "dissolving") throw new ChamaError("Members have to vote to dissolve first.");
+  const owed = loansOutstanding(chamaId);
+  if (owed > 0) throw new ChamaError(`${formatMoney(owed, chama.currency)} in loans is still to be repaid.`);
+  if (listRequests(chamaId, { status: ["pending", "approved"] }).length) throw new ChamaError("Settle or refuse the open requests first.");
+
+  const plan = distributionPlan(chama).filter((s) => s.amountMinor > 0);
+  if (plan.length === 0) throw new ChamaError("There's nothing on the books to distribute.");
+  const signatories = signatoriesFor(chamaId);
+  for (const share of plan) {
+    if (!approvalPossible({ required: chama.approvalsRequired, requestedBy: who.key, beneficiary: share.key, signatories })) {
+      const name = getMember(chamaId, share.key)?.name ?? "a member";
+      throw new ChamaError(`There aren't enough independent officers to sign ${name}'s share. Appoint more before distributing.`);
+    }
+  }
+
+  const ids: string[] = [];
+  tx((conn) => {
+    const insert = conn.prepare(
+      `INSERT INTO chama_requests (id, chama_id, kind, beneficiary, amount_minor, reason, requested_by, requested_at)
+       VALUES (?, ?, 'distribution', ?, ?, 'Final distribution on dissolution', ?, ?)`,
+    );
+    for (const share of plan) {
+      const id = `req_${crypto.randomUUID().slice(0, 12)}`;
+      insert.run(id, chamaId, share.key, share.amountMinor, who.key, now());
+      ids.push(id);
+    }
+  });
+  audit(who, chama, "distribution", `${who.name} started the final distribution of ${formatMoney(groupBalance(chamaId), chama.currency)}`);
+  return ids.map((id) => getRequest(id)!);
+}
+
+/** Everything still owed on loans, including by members who have left. */
+function loansOutstanding(chamaId: string): number {
+  return listRequests(chamaId, { kind: "loan", status: ["executed"] }).reduce((s, l) => s + loanPosition(l).outstandingMinor, 0);
+}
+
+/** A dissolving chama closes once its books are at zero and nothing is open. */
+function closeIfSettled(chamaId: string): void {
+  const chama = getChama(chamaId);
+  if (!chama || chama.status !== "dissolving") return;
+  if (groupBalance(chamaId) !== 0) return;
+  if (listRequests(chamaId, { status: ["pending", "approved"] }).length) return;
+  // A loan still owed is money the group is due; closing would write it off.
+  if (loansOutstanding(chamaId) > 0) return;
+  db().prepare(`UPDATE chamas SET status = 'dissolved' WHERE id = ?`).run(chamaId);
+  record({
+    actor: { kind: "system", id: "system", name: "Vayliron system" },
+    action: "chama.dissolved",
+    subjectKind: "chama",
+    subjectId: chamaId,
+    subjectLabel: chama.name,
+    summary: `${chama.name} was dissolved with its books at zero`,
+    companyId: null,
+  });
+}
+
+/** For a dissolving group whose books are already empty, the chair closes it. */
+export function closeChama(chamaId: string, who: ChamaWho): void {
+  const chama = requireChama(chamaId);
+  const me = requireMember(chama, who);
+  if (me.role !== "chairperson") throw new ChamaError("Only the chairperson closes the group.");
+  if (chama.status !== "dissolving") throw new ChamaError("Members have to vote to dissolve first.");
+  if (groupBalance(chamaId) !== 0) throw new ChamaError("The books aren't at zero yet.");
+  const owed = loansOutstanding(chamaId);
+  if (owed > 0) throw new ChamaError(`${formatMoney(owed, chama.currency)} in loans is still owed to the group. Collect it and distribute it first.`);
+  if (listRequests(chamaId, { status: ["pending", "approved"] }).length) throw new ChamaError("Settle or refuse the open requests first.");
+  closeIfSettled(chamaId);
 }
 
 /* ------------------------------------------------------------------ *
@@ -960,8 +1227,10 @@ export interface Proposal {
   id: string;
   title: string;
   body: string;
-  kind: "general" | "amendment";
+  kind: ProposalKind;
   amendmentBody: string | null;
+  /** The candidate for chair, or the proposed payout order. */
+  payload: { candidate?: string; order?: string[] } | null;
   createdBy: string;
   createdAt: string;
   closesAt: string;
@@ -972,24 +1241,61 @@ export interface Proposal {
   myVote: string | null;
 }
 
-export function createProposal(
-  chamaId: string,
-  who: ChamaWho,
-  input: { title: string; body: string; amendmentBody?: string; days: number },
-): string {
+export type ProposalKind = "general" | "amendment" | "chair" | "payout_order" | "dissolution";
+
+export interface NewProposal {
+  kind: ProposalKind;
+  title: string;
+  body: string;
+  amendmentBody?: string;
+  candidate?: string;
+  order?: string[];
+  days: number;
+}
+
+/**
+ * Puts a decision to the members. Four kinds change something when they
+ * carry: an amendment adopts a new constitution version, a chair vote hands
+ * over the chair, a payout-order vote reorders the merry-go-round, and a
+ * dissolution vote starts winding the group up. A general vote just records
+ * what the group decided.
+ */
+export function createProposal(chamaId: string, who: ChamaWho, input: NewProposal): string {
   const chama = requireChama(chamaId);
   requireMember(chama, who);
   if (input.title.trim().length < 3) throw new ChamaError("Give the proposal a title.");
   if (input.days < 1 || input.days > 30) throw new ChamaError("A vote stays open between 1 and 30 days.");
+
+  const amendment = input.kind === "amendment" ? input.amendmentBody?.trim() || null : null;
+  let payload: Proposal["payload"] = null;
+  if (input.kind === "amendment" && !amendment) throw new ChamaError("Write out the new constitution text.");
+  if (input.kind === "chair") {
+    const candidate = input.candidate ? getMember(chamaId, input.candidate) : null;
+    if (!candidate || candidate.status !== "active") throw new ChamaError("Choose a member to stand for chair.");
+    if (candidate.role === "chairperson") throw new ChamaError("They are already the chairperson.");
+    payload = { candidate: candidate.key };
+  }
+  if (input.kind === "payout_order") {
+    if (!categoryFor(chama.category).features.rotation) throw new ChamaError("This chama doesn't rotate a pot.");
+    if (!input.order || !reorderAllowed(payoutOrder(chamaId), input.order, 0)) {
+      throw new ChamaError("The new order has to list every current member exactly once.");
+    }
+    payload = { order: input.order };
+  }
+  if (input.kind === "dissolution") {
+    requireOperating(chama);
+    const open = db().prepare(`SELECT 1 FROM chama_proposals WHERE chama_id = ? AND kind = 'dissolution' AND status = 'open'`).get(chamaId);
+    if (open) throw new ChamaError("A vote to dissolve is already open.");
+  }
+
   const id = `prp_${crypto.randomUUID().slice(0, 10)}`;
   const closes = new Date(Date.now() + input.days * 86_400_000).toISOString();
-  const amendment = input.amendmentBody?.trim() || null;
   db()
     .prepare(
-      `INSERT INTO chama_proposals (id, chama_id, title, body, kind, amendment_body, created_by, created_at, closes_at)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO chama_proposals (id, chama_id, title, body, kind, amendment_body, payload, created_by, created_at, closes_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, chamaId, input.title.trim(), input.body.trim(), amendment ? "amendment" : "general", amendment, who.key, now(), closes);
+    .run(id, chamaId, input.title.trim(), input.body.trim(), input.kind, amendment, payload ? JSON.stringify(payload) : null, who.key, now(), closes);
   audit(who, chama, "proposal", `${who.name} put "${input.title.trim()}" to a vote`, { proposalId: id });
   return id;
 }
@@ -1028,11 +1334,32 @@ export function settleProposals(chamaId: string): void {
     const outcome = voteOutcome(tally);
     tx((conn) => {
       const changed = conn.prepare(`UPDATE chama_proposals SET status = ?, closed_at = ? WHERE id = ? AND status = 'open'`).run(outcome, now(), p.id);
-      if (changed.changes === 1 && outcome === "carried" && p.kind === "amendment") {
+      if (changed.changes !== 1 || outcome !== "carried") return;
+      const payload = p.payload ? (JSON.parse(p.payload as string) as Proposal["payload"]) : null;
+      if (p.kind === "amendment") {
         const version = ((conn.prepare(`SELECT MAX(version) AS v FROM chama_constitutions WHERE chama_id = ?`).get(chamaId) as Row).v as number) + 1;
         conn
           .prepare(`INSERT INTO chama_constitutions (chama_id, version, body, adopted_at, adopted_by) VALUES (?,?,?,?,?)`)
           .run(chamaId, version, p.amendment_body, now(), `vote:${p.id}`);
+      }
+      if (p.kind === "chair" && payload?.candidate) {
+        const candidate = conn.prepare(`SELECT status FROM chama_members WHERE chama_id = ? AND member_key = ?`).get(chamaId, payload.candidate) as Row | undefined;
+        // A candidate who left while the vote was open cannot take the chair.
+        if (candidate?.status === "active") {
+          conn.prepare(`UPDATE chama_members SET role = 'member' WHERE chama_id = ? AND role = 'chairperson'`).run(chamaId);
+          conn.prepare(`UPDATE chama_members SET role = 'chairperson' WHERE chama_id = ? AND member_key = ?`).run(chamaId, payload.candidate);
+        }
+      }
+      if (p.kind === "payout_order" && payload?.order) {
+        const current = (conn.prepare(`SELECT member_key FROM chama_members WHERE chama_id = ? AND status = 'active' ORDER BY COALESCE(payout_position, 1e9), joined_on, name`).all(chamaId) as Row[]).map((r) => r.member_key as string);
+        // Membership may have changed since the vote opened; only a still-valid order is applied.
+        if (reorderAllowed(current, payload.order, 0)) {
+          const set = conn.prepare(`UPDATE chama_members SET payout_position = ? WHERE chama_id = ? AND member_key = ?`);
+          payload.order.forEach((key, i) => set.run(i + 1, chamaId, key));
+        }
+      }
+      if (p.kind === "dissolution") {
+        conn.prepare(`UPDATE chamas SET status = 'dissolving' WHERE id = ? AND status IN ('forming', 'active')`).run(chamaId);
       }
     });
   }
@@ -1058,6 +1385,7 @@ export function listProposals(chamaId: string, memberKey: string): Proposal[] {
       body: p.body as string,
       kind: p.kind as Proposal["kind"],
       amendmentBody: (p.amendment_body as string) ?? null,
+      payload: p.payload ? (JSON.parse(p.payload as string) as Proposal["payload"]) : null,
       createdBy: p.created_by as string,
       createdAt: p.created_at as string,
       closesAt: p.closes_at as string,
@@ -1104,13 +1432,15 @@ export interface MemberDashboard {
   restrictedMinor: number;
   availableMinor: number;
   receivedMinor: number;
-  loans: LoanPosition[];
+  loans: (LoanPosition & { overdueMinor: number })[];
   /** Merry-go-round only. Projected, not money in hand. */
   rotation: { roundsAway: number; expectedOn: string; potMinor: number } | null;
   group: { balanceMinor: number; reserveMinor: number; availableMinor: number; members: number };
+  target: { targetMinor: number; targetDate: string | null; progressBps: number } | null;
   pendingReceipts: Receipt[];
   openVotes: number;
   needsAcknowledgement: boolean;
+  exit: ReturnType<typeof exitPreview>;
 }
 
 export function memberStanding(chama: Chama, member: Member, today: string): Standing {
@@ -1121,11 +1451,16 @@ export function memberStanding(chama: Chama, member: Member, today: string): Sta
     contributionMinor: chama.contributionMinor,
     graceDays: chama.graceDays,
     lateFeeMinor: chama.lateFeeMinor,
+    // A member who has left stops accruing at the date they left.
     joinedOn: member.joinedOn,
-    today,
+    today: member.exitedOn && member.exitedOn < today ? member.exitedOn : today,
     paidMinor: sums.contribution ?? 0,
     lateFeesPaidMinor: sums.late_fee ?? 0,
   });
+}
+
+function withOverdue(l: LoanPosition, today: string) {
+  return { ...l, overdueMinor: loanOverdue(l.schedule, l.repaidMinor, today).overdueMinor };
 }
 
 export function memberDashboard(chamaId: string, memberKey: string, today = nairobiDate()): MemberDashboard | null {
@@ -1137,15 +1472,14 @@ export function memberDashboard(chamaId: string, memberKey: string, today = nair
   const sums = sumsByKind(chamaId, memberKey);
   const mine = memberAvailable(chama, memberKey);
   const group = groupAvailable(chama);
-  const order = payoutOrder(chamaId);
+  const queue = payoutQueue(chamaId);
 
   let rotation: MemberDashboard["rotation"] = null;
-  if (features.rotation && member.status === "active") {
-    const round = nextRound(chamaId);
-    const away = roundsUntilTurn(order, memberKey, round);
-    if (away !== null) {
-      const slot = rotationSchedule(order, chama.anchorDate, chama.frequency, round + away, 1)[0];
-      rotation = { roundsAway: away, expectedOn: slot.dueOn, potMinor: potSize(chama.contributionMinor, order.length) };
+  if (features.rotation && member.status === "active" && chama.status !== "dissolving") {
+    const away = queue.indexOf(memberKey);
+    if (away >= 0) {
+      const slot = queueSlots(chama, away + 1)[away];
+      rotation = { roundsAway: away, expectedOn: slot.dueOn, potMinor: potSize(chama.contributionMinor, queue.length) };
     }
   }
 
@@ -1158,13 +1492,52 @@ export function memberDashboard(chamaId: string, memberKey: string, today = nair
     restrictedMinor: mine.restrictedMinor,
     availableMinor: mine.availableMinor,
     receivedMinor: (sums.payout ?? 0) + (sums.welfare ?? 0),
-    loans: memberLoans(chamaId, memberKey),
+    loans: memberLoans(chamaId, memberKey).map((l) => withOverdue(l, today)),
     rotation,
-    group: { ...group, members: order.length },
+    group: { ...group, members: queue.length },
+    target:
+      chama.savingsTargetMinor > 0
+        ? { targetMinor: chama.savingsTargetMinor, targetDate: chama.targetDate, progressBps: targetProgressBps(group.balanceMinor, chama.savingsTargetMinor) }
+        : null,
     pendingReceipts: listReceipts(chamaId, { status: "pending", memberKey }),
     openVotes: listProposals(chamaId, memberKey).filter((p) => p.status === "open" && !p.myVote).length,
     needsAcknowledgement: member.acknowledgedVersion < chama.constitutionVersion,
+    exit: exitPreview(chama, memberKey),
   };
+}
+
+export interface StatementLine {
+  kind: string;
+  direction: "in" | "out";
+  totalMinor: number;
+  entries: number;
+}
+
+/** The group's income and outflows by kind, from the confirmed ledger. */
+export function groupStatement(chamaId: string, from?: string, to?: string): StatementLine[] {
+  const clauses = ["chama_id = ?"];
+  const params: unknown[] = [chamaId];
+  if (from) {
+    clauses.push("at >= ?");
+    params.push(from);
+  }
+  if (to) {
+    clauses.push("at < ?");
+    params.push(to);
+  }
+  return (
+    db()
+      .prepare(
+        `SELECT kind, direction, SUM(amount_minor) AS total, COUNT(*) AS n FROM chama_ledger
+          WHERE ${clauses.join(" AND ")} GROUP BY kind, direction ORDER BY direction, total DESC`,
+      )
+      .all(...params) as Row[]
+  ).map((r) => ({
+    kind: r.kind as string,
+    direction: r.direction as "in" | "out",
+    totalMinor: r.total as number,
+    entries: r.n as number,
+  }));
 }
 
 export interface GroupDashboard {
@@ -1177,21 +1550,65 @@ export interface GroupDashboard {
   expectedMinor: number;
   arrearsMinor: number;
   loansOutstandingMinor: number;
+  loansOverdueMinor: number;
   pendingReceipts: Receipt[];
   openRequests: ChamaRequest[];
   schedule: RotationSlot[];
   periodsElapsed: number;
+  /** The most recent contribution periods, newest first. */
+  collections: PeriodCollection[];
+  statement: StatementLine[];
+  loanBook: (LoanPosition & { overdueMinor: number; borrower: string })[];
+  upcoming: { on: string; label: string; amountMinor: number }[];
+  target: { targetMinor: number; targetDate: string | null; progressBps: number } | null;
+  distribution: { key: string; amountMinor: number }[] | null;
+  exited: Member[];
 }
 
 export function groupDashboard(chamaId: string, today = nairobiDate()): GroupDashboard | null {
   const chama = getChama(chamaId);
   if (!chama) return null;
+  const features = categoryFor(chama.category).features;
   const members = listMembers(chamaId).map((m) => {
     const mine = memberAvailable(chama, m.key);
     return { ...m, standing: memberStanding(chama, m, today), savingsMinor: mine.savingsMinor, owedMinor: mine.owedMinor };
   });
   const { balanceMinor, reserveMinor, availableMinor } = groupAvailable(chama);
-  const order = members.map((m) => m.key);
+
+  const loanBook = members.flatMap((m) =>
+    memberLoans(chamaId, m.key)
+      .filter((l) => l.outstandingMinor > 0)
+      .map((l) => ({ ...withOverdue(l, today), borrower: m.key })),
+  );
+
+  const horizon = new Date(`${today}T00:00:00Z`);
+  horizon.setUTCDate(horizon.getUTCDate() + 30);
+  const until = horizon.toISOString().slice(0, 10);
+  const upcoming: GroupDashboard["upcoming"] = [];
+  if (chama.status !== "dissolving") {
+    const nextDue = nextDueDate(chama.anchorDate, chama.frequency, today);
+    if (nextDue <= until) {
+      upcoming.push({ on: nextDue, label: "Contributions due", amountMinor: chama.contributionMinor * members.length });
+    }
+  }
+  for (const l of loanBook) {
+    const next = l.nextInstallment;
+    if (next && next.dueOn <= until) {
+      upcoming.push({ on: next.dueOn, label: `Loan installment ${next.number} of ${l.schedule.length}`, amountMinor: next.totalMinor });
+    }
+  }
+  upcoming.sort((a, b) => a.on.localeCompare(b.on));
+
+  const collections = collectionsByPeriod(
+    chama.anchorDate,
+    chama.frequency,
+    chama.contributionMinor,
+    today,
+    members.map((m) => ({ joinedOn: m.joinedOn, paidMinor: m.standing.paidMinor })),
+  )
+    .slice(-6)
+    .reverse();
+
   return {
     chama,
     members,
@@ -1202,11 +1619,107 @@ export function groupDashboard(chamaId: string, today = nairobiDate()): GroupDas
     expectedMinor: members.reduce((s, m) => s + m.standing.expectedMinor, 0),
     arrearsMinor: members.reduce((s, m) => s + m.standing.arrearsMinor, 0),
     loansOutstandingMinor: members.reduce((s, m) => s + m.owedMinor, 0),
+    loansOverdueMinor: loanBook.reduce((s, l) => s + l.overdueMinor, 0),
     pendingReceipts: listReceipts(chamaId, { status: "pending" }),
     openRequests: listRequests(chamaId, { status: ["pending", "approved"] }),
-    schedule: categoryFor(chama.category).features.rotation
-      ? rotationSchedule(order, chama.anchorDate, chama.frequency, nextRound(chamaId), Math.min(order.length, 12))
-      : [],
+    schedule: features.rotation && chama.status !== "dissolving" ? queueSlots(chama, Math.min(members.length, 12)) : [],
     periodsElapsed: periodsDue(chama.anchorDate, chama.frequency, today),
+    collections,
+    statement: groupStatement(chamaId),
+    loanBook,
+    upcoming,
+    target:
+      chama.savingsTargetMinor > 0
+        ? { targetMinor: chama.savingsTargetMinor, targetDate: chama.targetDate, progressBps: targetProgressBps(balanceMinor, chama.savingsTargetMinor) }
+        : null,
+    distribution: chama.status === "dissolving" ? distributionPlan(chama) : null,
+    exited: listMembers(chamaId, true).filter((m) => m.status === "exited"),
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Notifications
+ * ------------------------------------------------------------------ */
+
+export interface ChamaNotice {
+  chamaId: string;
+  chamaName: string;
+  tone: "brand" | "amber" | "flame" | "sky";
+  text: string;
+  href: string;
+}
+
+/**
+ * What needs this person's attention across every chama they belong to.
+ *
+ * Worked out from the books each time rather than stored, so a notice can
+ * never disagree with the ledger: the moment a payment is confirmed, the
+ * reminder to pay it is gone.
+ */
+export function notificationsFor(memberKey: string, today = nairobiDate()): ChamaNotice[] {
+  const out: ChamaNotice[] = [];
+  const recent = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  for (const { chama } of listChamasFor(memberKey)) {
+    const view = memberDashboard(chama.id, memberKey, today);
+    if (!view) continue;
+    const m = (minor: number) => formatMoney(minor, chama.currency);
+    const base = { chamaId: chama.id, chamaName: chama.name };
+    const mine = `/chama/${chama.id}`;
+    const books = `/chama/${chama.id}/books`;
+
+    if (view.needsAcknowledgement) {
+      out.push({ ...base, tone: "amber", href: mine, text: `Constitution v${chama.constitutionVersion} was adopted. Read and accept it.` });
+    }
+    const owed = view.standing.arrearsMinor + view.standing.lateFeesOutstandingMinor;
+    if (owed > 0) {
+      out.push({ ...base, tone: "flame", href: mine, text: `You're behind by ${m(owed)}.` });
+    } else if (chama.status !== "dissolving" && view.standing.creditMinor < chama.contributionMinor) {
+      const days = Math.round((Date.parse(`${view.nextDue}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
+      if (days <= 3) {
+        out.push({ ...base, tone: "sky", href: mine, text: `${m(chama.contributionMinor)} contribution due ${days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`}.` });
+      }
+    }
+    for (const l of view.loans) {
+      if (l.overdueMinor > 0) out.push({ ...base, tone: "flame", href: mine, text: `${m(l.overdueMinor)} of your loan repayments is overdue.` });
+    }
+    if (view.openVotes > 0) {
+      out.push({ ...base, tone: "brand", href: mine, text: `${view.openVotes} vote${view.openVotes === 1 ? "" : "s"} waiting for you.` });
+    }
+    for (const r of listReceipts(chama.id, { memberKey, status: "rejected" })) {
+      if (r.submittedAt >= recent) out.push({ ...base, tone: "flame", href: mine, text: `Payment ${r.reference} was refused: ${r.note ?? "no reason given"}.` });
+    }
+    for (const r of listRequests(chama.id, { beneficiary: memberKey, status: ["executed", "rejected"] })) {
+      const at = r.executedAt ?? r.requestedAt;
+      if (at < recent) continue;
+      out.push(
+        r.status === "executed"
+          ? { ...base, tone: "brand", href: mine, text: `${m(r.amountMinor)} was sent to you (${r.reference}).` }
+          : { ...base, tone: "amber", href: mine, text: `Your ${r.kind} request for ${m(r.amountMinor)} was refused.` },
+      );
+    }
+    if (chama.status === "dissolving") {
+      out.push({ ...base, tone: "amber", href: mine, text: "Members voted to dissolve. The balance will be paid back out once loans are repaid." });
+    }
+
+    // Officer work: only what this person is actually allowed to act on.
+    const me = view.member;
+    if (can(me.role, "confirm_receipt") && !view.needsAcknowledgement) {
+      const waiting = listReceipts(chama.id, { status: "pending" }).filter((r) => canConfirmReceipt(me, r)).length;
+      if (waiting) out.push({ ...base, tone: "amber", href: books, text: `${waiting} payment${waiting === 1 ? "" : "s"} to check against the statement.` });
+    }
+    if (can(me.role, "sign_request") && !view.needsAcknowledgement) {
+      const signatories = signatoriesFor(chama.id);
+      const toSign = listRequests(chama.id, { status: ["pending"] }).filter(
+        (r) =>
+          !r.decisions.some((d) => d.approver === memberKey) &&
+          canSign({ required: chama.approvalsRequired, requestedBy: r.requestedBy, beneficiary: r.beneficiary, signatories }, memberKey),
+      ).length;
+      if (toSign) out.push({ ...base, tone: "amber", href: books, text: `${toSign} request${toSign === 1 ? "" : "s"} waiting for your signature.` });
+    }
+    if (can(me.role, "execute_request") || me.role === "chairperson") {
+      const toSend = listRequests(chama.id, { status: ["approved"] }).filter((r) => mayExecute(chama.id, me, r)).length;
+      if (toSend) out.push({ ...base, tone: "sky", href: books, text: `${toSend} approved payment${toSend === 1 ? "" : "s"} to send.` });
+    }
+  }
+  return out;
 }

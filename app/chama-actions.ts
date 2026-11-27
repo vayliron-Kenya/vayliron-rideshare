@@ -11,6 +11,7 @@ import {
   assignRole,
   castVote,
   ChamaError,
+  closeChama,
   createChama,
   createProposal,
   createRequest,
@@ -19,12 +20,16 @@ import {
   executeRequest,
   getChama,
   joinChama,
+  payoutOrder,
   postAnnouncement,
+  requestExit,
+  setNominee,
+  startDistribution,
   submitReceipt,
   whoFromActor,
   type ChamaWho,
 } from "@/lib/chama";
-import { CHAMA_CURRENCIES, CHAMA_ROLES, isCategory, parseMoney } from "@/lib/domain/chama";
+import { CHAMA_CURRENCIES, CHAMA_ROLES, isCategory, moveInOrder, parseMoney } from "@/lib/domain/chama";
 
 /**
  * Chama server actions.
@@ -84,6 +89,9 @@ const createSchema = z.object({
   reservePct: z.coerce.number().min(0).max(100),
   loanRatePct: z.coerce.number().min(0).max(10),
   loanMultiple: z.coerce.number().min(0).max(10),
+  quorumPct: z.coerce.number().min(1, "Quorum must be at least 1%.").max(100),
+  thresholdPct: z.coerce.number().gt(50, "A vote must need more than half to carry.").max(100),
+  targetDate: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]).optional(),
 });
 
 export async function createChamaAction(_prev: FormState, data: FormData): Promise<FormState> {
@@ -97,8 +105,10 @@ export async function createChamaAction(_prev: FormState, data: FormData): Promi
   const contribution = money(data, "contribution", f.currency);
   const entryFee = money(data, "entryFee", f.currency);
   const lateFee = money(data, "lateFee", f.currency);
+  const target = money(data, "savingsTarget", f.currency);
   if (!contribution) return { error: "Set the contribution amount." };
   if (entryFee === null || lateFee === null) return { error: "Check the fee amounts." };
+  if (target === null) return { error: "Check the savings target." };
 
   let id: string;
   try {
@@ -122,8 +132,10 @@ export async function createChamaAction(_prev: FormState, data: FormData): Promi
         reserveBps: Math.round(f.reservePct * 100),
         loanRateBps: Math.round(f.loanRatePct * 100),
         loanMultipleTenths: Math.round(f.loanMultiple * 10),
-        quorumBps: 5000,
-        thresholdBps: 6667,
+        quorumBps: Math.round(f.quorumPct * 100),
+        thresholdBps: Math.round(f.thresholdPct * 100),
+        savingsTargetMinor: target,
+        targetDate: f.targetDate || null,
       },
       me,
     ).id;
@@ -263,16 +275,64 @@ export async function executeRequestAction(_prev: FormState, data: FormData): Pr
  * Votes and announcements
  * ------------------------------------------------------------------ */
 
+const PROPOSAL_KINDS = ["general", "amendment", "chair", "payout_order", "dissolution"] as const;
+
 export async function createProposalAction(_prev: FormState, data: FormData): Promise<FormState> {
   const chamaId = str(data, "chamaId");
+  const kind = str(data, "kind") || "general";
+  if (!(PROPOSAL_KINDS as readonly string[]).includes(kind)) return { error: "Choose what kind of vote this is." };
   return run(chamaId, (me) => {
+    const mover = str(data, "mover");
+    const order =
+      kind === "payout_order" && mover
+        ? moveInOrder(payoutOrder(chamaId), mover, Math.max(0, Number(data.get("position")) - 1))
+        : undefined;
     createProposal(chamaId, me, {
+      kind: kind as (typeof PROPOSAL_KINDS)[number],
       title: str(data, "title"),
       body: str(data, "body"),
       amendmentBody: str(data, "amendment") || undefined,
+      candidate: str(data, "candidate") || undefined,
+      order,
       days: Number(data.get("days")) || 7,
     });
     return "Put to the members.";
+  });
+}
+
+export async function exitAction(_prev: FormState, data: FormData): Promise<FormState> {
+  const chamaId = str(data, "chamaId");
+  if (data.get("confirm") !== "on") return { error: "Tick the box to confirm you want to leave." };
+  return run(chamaId, (me) => {
+    const request = requestExit(chamaId, me, str(data, "reason"));
+    return request
+      ? "Your refund has gone to the officers. You'll be marked as left once it's sent."
+      : "You've left the chama. Your history stays on the books.";
+  });
+}
+
+export async function nomineeAction(_prev: FormState, data: FormData): Promise<FormState> {
+  const chamaId = str(data, "chamaId");
+  const name = str(data, "nomineeName");
+  return run(chamaId, (me) => {
+    setNominee(chamaId, me, name ? { name, phone: str(data, "nomineePhone"), relation: str(data, "nomineeRelation") } : null);
+    return name ? "Nominee saved. Only you and the group's officers can see it." : "Nominee removed.";
+  });
+}
+
+export async function startDistributionAction(_prev: FormState, data: FormData): Promise<FormState> {
+  const chamaId = str(data, "chamaId");
+  return run(chamaId, (me) => {
+    const made = startDistribution(chamaId, me);
+    return `${made.length} distribution payment${made.length === 1 ? "" : "s"} sent to the officers for signatures.`;
+  });
+}
+
+export async function closeChamaAction(_prev: FormState, data: FormData): Promise<FormState> {
+  const chamaId = str(data, "chamaId");
+  return run(chamaId, (me) => {
+    closeChama(chamaId, me);
+    return "The chama is closed. Its books stay readable.";
   });
 }
 

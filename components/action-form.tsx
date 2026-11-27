@@ -195,12 +195,14 @@ export function TextAreaField({
   placeholder,
   rows = 3,
   required,
+  defaultValue,
 }: {
   label: string;
   name: string;
   placeholder?: string;
   rows?: number;
   required?: boolean;
+  defaultValue?: string;
 }) {
   return (
     <label className="block">
@@ -210,6 +212,7 @@ export function TextAreaField({
         rows={rows}
         required={required}
         placeholder={placeholder}
+        defaultValue={defaultValue}
         className={`${CONTROL} resize-y`}
       />
     </label>

@@ -552,6 +552,8 @@ export interface ConstitutionRules {
   loanMultipleTenths: number;
   quorumBps: number;
   thresholdBps: number;
+  savingsTargetMinor?: number;
+  targetDate?: string | null;
 }
 
 const FREQ_LABEL: Record<Frequency, string> = {
@@ -582,13 +584,155 @@ export function constitutionTemplate(r: ConstitutionRules): string {
     cat.features.lending
       ? `6. Lending. A member may borrow up to ${(r.loanMultipleTenths / 10).toLocaleString("en-KE")} times their own savings, at a flat ${pct(r.loanRateBps)} a month on the amount borrowed, within the limits of Kenyan law.`
       : `6. Lending. The group does not lend.`,
+    (r.savingsTargetMinor ?? 0) > 0
+      ? `6a. Target. The group is saving towards ${money(r.savingsTargetMinor ?? 0)}${r.targetDate ? ` by ${r.targetDate}` : ""}.`
+      : ``,
     `7. Handling money. No single officer may release group funds. Every payout, loan or withdrawal needs the signatures of ${r.approvalsRequired} officers, none of whom may be the person who asked for it or the person receiving it. Every contribution recorded by one officer is confirmed by another.`,
     `8. Decisions and amendments. Group decisions are made by vote. A vote needs ${pct(r.quorumBps)} of members to take part and ${pct(r.thresholdBps)} of those voting yes or no to carry. This constitution is amended only by such a vote, and each version is kept.`,
-    `9. Leaving the group. A member who leaves is paid their savings, less any loan outstanding, once officers approve the withdrawal.`,
+    `9. Leaving the group. A member who leaves must first clear any loan. They are then paid their savings — or, in a merry-go-round, what they have paid in and not yet received — once officers approve it. Each member may nominate a beneficiary to receive their share if they die.`,
     `10. Disputes. Disputes go first to the officers, then to a vote of the members, and then to mediation before any court.`,
-    `11. Dissolution. The group may dissolve by vote. Funds are returned to members in proportion to their savings after debts are settled.`,
+    `11. Dissolution. The group may dissolve by vote. No new contributions or loans are taken after that vote; loans are repaid, and the balance is returned to members in proportion to their savings, each payment signed by officers as usual.`,
     ``,
     `This template is a starting point, not legal advice. Groups that hold significant funds or invest should register with the Department of Social Development or as a society, and invest only through licensed institutions.`,
   ];
-  return lines.join("\n");
+  return lines.filter((l, i) => l !== "" || i === lines.length - 2).join("\n");
+}
+
+/* ------------------------------------------------------------------ *
+ * Dissolution and exit
+ * ------------------------------------------------------------------ */
+
+export interface Share {
+  key: string;
+  amountMinor: number;
+}
+
+/**
+ * Splits `totalMinor` in proportion to each member's weight, by largest
+ * remainder: every share is floored, then the leftover minor units go one at a
+ * time to the biggest fractions. The shares always add back to the total, and
+ * nobody gets a unit more than their fraction rounds to. With no weights at
+ * all, the pot is split equally.
+ */
+export function distributionShares(totalMinor: number, weights: Share[]): Share[] {
+  if (!Number.isInteger(totalMinor) || totalMinor < 0) throw new RangeError("total must be a whole amount");
+  if (weights.length === 0) return [];
+  const clean = weights.map((w) => ({ key: w.key, weight: Math.max(0, w.amountMinor) }));
+  const sum = clean.reduce((s, w) => s + w.weight, 0);
+  const basis = sum === 0 ? clean.map((w) => ({ ...w, weight: 1 })) : clean;
+  const denom = sum === 0 ? clean.length : sum;
+
+  const raw = basis.map((w, i) => {
+    const exact = (totalMinor * w.weight) / denom;
+    return { key: w.key, floor: Math.floor(exact), frac: exact - Math.floor(exact), i };
+  });
+  let left = totalMinor - raw.reduce((s, r) => s + r.floor, 0);
+  const byFrac = [...raw].sort((a, b) => b.frac - a.frac || a.i - b.i);
+  for (const r of byFrac) {
+    if (left <= 0) break;
+    r.floor += 1;
+    left -= 1;
+  }
+  return raw.map((r) => ({ key: r.key, amountMinor: r.floor }));
+}
+
+/**
+ * What a leaving member is owed.
+ *
+ * In a savings group, their savings. In a merry-go-round, whatever they have
+ * paid in and not yet received back — someone leaving before their turn gets
+ * their money back; someone who has already taken the pot owes the group
+ * until they have paid in as much as they took.
+ */
+export function exitSettlement(
+  features: ChamaFeatures,
+  input: { savingsMinor: number; contributedMinor: number; receivedMinor: number },
+): { refundMinor: number; owesMinor: number } {
+  if (features.savings) return { refundMinor: Math.max(0, input.savingsMinor), owesMinor: 0 };
+  const net = input.contributedMinor - input.receivedMinor;
+  return { refundMinor: Math.max(0, net), owesMinor: Math.max(0, -net) };
+}
+
+/* ------------------------------------------------------------------ *
+ * Changing the payout order
+ * ------------------------------------------------------------------ */
+
+/**
+ * A new merry-go-round order is acceptable only if it is a reordering of the
+ * same people, and nobody already paid in the current cycle moves — otherwise
+ * a member could be paid twice in a cycle, or skipped.
+ */
+export function reorderAllowed(current: string[], proposed: string[], roundsDoneInCycle: number): boolean {
+  if (current.length !== proposed.length) return false;
+  if (new Set(proposed).size !== proposed.length) return false;
+  if (!current.every((k) => proposed.includes(k))) return false;
+  for (let i = 0; i < Math.min(roundsDoneInCycle, current.length); i += 1) {
+    if (current[i] !== proposed[i]) return false;
+  }
+  return true;
+}
+
+/** Moves `key` to `position` (0-based), shifting everyone between. */
+export function moveInOrder(order: string[], key: string, position: number): string[] {
+  const without = order.filter((k) => k !== key);
+  if (without.length === order.length) return order;
+  const at = Math.max(0, Math.min(position, without.length));
+  return [...without.slice(0, at), key, ...without.slice(at)];
+}
+
+/* ------------------------------------------------------------------ *
+ * Collections by period, and overdue loans
+ * ------------------------------------------------------------------ */
+
+export interface PeriodCollection {
+  index: number;
+  dueOn: string;
+  liable: number;
+  paidUp: number;
+}
+
+/**
+ * For each contribution period, how many members owed it and how many have
+ * covered it. Payments cover periods oldest first, the same rule as `standing`.
+ */
+export function collectionsByPeriod(
+  anchor: string,
+  frequency: Frequency,
+  contributionMinor: number,
+  today: string,
+  members: { joinedOn: string; paidMinor: number }[],
+): PeriodCollection[] {
+  const due = periodsDue(anchor, frequency, today);
+  const out: PeriodCollection[] = [];
+  for (let index = 0; index < due; index += 1) {
+    let liable = 0;
+    let paidUp = 0;
+    for (const m of members) {
+      const first = firstLiablePeriod(anchor, frequency, m.joinedOn);
+      if (index < first) continue;
+      liable += 1;
+      const covered = Math.floor(m.paidMinor / contributionMinor);
+      if (index - first < covered) paidUp += 1;
+    }
+    out.push({ index, dueOn: dueDate(anchor, frequency, index), liable, paidUp });
+  }
+  return out;
+}
+
+/** Installments fallen due by `today` that the repayments so far do not cover. */
+export function loanOverdue(schedule: Installment[], repaidMinor: number, today: string): { overdueMinor: number; installments: number } {
+  let dueSoFar = 0;
+  let installments = 0;
+  for (const i of schedule) {
+    if (i.dueOn >= today) break;
+    dueSoFar += i.totalMinor;
+    if (repaidMinor < dueSoFar) installments += 1;
+  }
+  return { overdueMinor: Math.max(0, dueSoFar - repaidMinor), installments };
+}
+
+/** Progress towards a group savings target, in basis points, capped at 100%. */
+export function targetProgressBps(balanceMinor: number, targetMinor: number): number {
+  if (targetMinor <= 0) return 0;
+  return Math.min(10_000, Math.floor((Math.max(0, balanceMinor) * 10_000) / targetMinor));
 }

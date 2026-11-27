@@ -48,6 +48,7 @@ const STATUS: Record<string, { label: string; tone: "neutral" | "brand" | "amber
   no_quorum: { label: "No quorum", tone: "neutral" },
   forming: { label: "Forming", tone: "amber" },
   active: { label: "Active", tone: "brand" },
+  dissolving: { label: "Dissolving", tone: "amber" },
   dissolved: { label: "Dissolved", tone: "neutral" },
 };
 
@@ -103,4 +104,7 @@ export const KIND_LABEL: Record<string, string> = {
   loan: "Loan",
   withdrawal: "Withdrawal",
   welfare: "Welfare support",
+  exit: "Leaving refund",
+  exit_refund: "Leaving refund",
+  distribution: "Final distribution",
 };

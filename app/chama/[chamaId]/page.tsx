@@ -1,15 +1,19 @@
 import { notFound, redirect } from "next/navigation";
 
+import Link from "next/link";
+
 import {
   acknowledgeAction,
   createProposalAction,
   createRequestAction,
+  exitAction,
+  nomineeAction,
   submitReceiptAction,
   voteAction,
 } from "@/app/chama-actions";
-import { ActionForm, Field, SelectField, TextAreaField } from "@/components/action-form";
+import { ActionForm, CheckField, Field, SelectField, TextAreaField } from "@/components/action-form";
 import { ChamaTabs, Figure, KIND_LABEL, RoleBadge, StatusBadge, when } from "@/components/chama";
-import { Card, CardHeader, EmptyState } from "@/components/ui";
+import { Badge, Card, CardHeader, EmptyState, Meter } from "@/components/ui";
 import { actorFrom, getPrincipal } from "@/lib/auth";
 import {
   constitutionHistory,
@@ -20,6 +24,7 @@ import {
   listReceipts,
   listRequests,
   memberDashboard,
+  notificationsFor,
   RAILS,
   whoFromActor,
 } from "@/lib/chama";
@@ -55,6 +60,14 @@ export default async function MemberPage({ params }: { params: Promise<{ chamaId
   const announcements = listAnnouncements(chamaId, 5);
   const others = listMembers(chamaId).filter((x) => x.key !== me.key);
   const hidden = (name: string, value: string) => <input type="hidden" name={name} value={value} />;
+  const notices = notificationsFor(me.key).filter((n) => n.chamaId === chamaId);
+  const operating = chama.status !== "dissolving";
+  const PROPOSAL_LABEL: Record<string, string> = {
+    amendment: "amends the constitution",
+    chair: "new chairperson",
+    payout_order: "payout order",
+    dissolution: "dissolve the group",
+  };
 
   return (
     <div className="space-y-6">
@@ -65,7 +78,7 @@ export default async function MemberPage({ params }: { params: Promise<{ chamaId
           <p className="text-xs uppercase tracking-wider text-faint">{categoryFor(chama.category).label}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-body">{chama.name}</h1>
           <p className="mt-1 text-sm text-muted">
-            {m(chama.contributionMinor)} {chama.frequency} · next due {when(view.nextDue)} · {view.group.members} members
+            {m(chama.contributionMinor)} {chama.frequency}{operating ? ` · next due ${when(view.nextDue)}` : ""} · {view.group.members} members
           </p>
         </div>
         <div className="flex gap-2"><RoleBadge role={member.role} /><StatusBadge status={chama.status} /></div>
@@ -79,6 +92,32 @@ export default async function MemberPage({ params }: { params: Promise<{ chamaId
             {hidden("chamaId", chamaId)}
             {hidden("version", String(chama.constitutionVersion))}
           </ActionForm>
+        </Card>
+      ) : null}
+
+      {!operating ? (
+        <Card className="border-amber/50 p-5">
+          <p className="text-sm font-semibold text-body">Members voted to dissolve {chama.name}.</p>
+          <p className="mt-1 text-sm text-muted">
+            No new contributions or loans are taken. Once every loan is repaid, the officers pay the balance back out in
+            proportion to savings, each payment signed as usual.
+          </p>
+        </Card>
+      ) : null}
+
+      {notices.length ? (
+        <Card>
+          <CardHeader title="Needs your attention" />
+          <ul className="divide-y divide-line">
+            {notices.map((n, i) => (
+              <li key={i} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
+                <span className="text-body">{n.text}</span>
+                {n.href !== `/chama/${chamaId}` ? (
+                  <Link href={n.href} className="shrink-0 text-xs font-medium text-accent">Open</Link>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </Card>
       ) : null}
 
@@ -116,8 +155,25 @@ export default async function MemberPage({ params }: { params: Promise<{ chamaId
         )}
       </section>
       <p className="-mt-3 text-xs text-faint">
-        Solid figures are confirmed money on the group&apos;s books. Dashed ones are projections from the rules and can change.
+        Solid figures are confirmed money on the group&apos;s books. Dashed ones are projections from the rules and can change.{" "}
+        <a href={`/api/chama/${chamaId}/statement.csv`} className="font-medium text-accent">Download your statement (CSV)</a>
       </p>
+
+      {view.target ? (
+        <Card className="p-5">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-xs font-medium uppercase tracking-wider text-faint">Group goal</p>
+            <p className="tabular text-sm font-semibold text-body">
+              {m(view.group.balanceMinor)} of {m(view.target.targetMinor)}
+            </p>
+          </div>
+          <Meter pct={view.target.progressBps / 100} className="mt-2" />
+          <p className="mt-2 text-xs text-muted">
+            {(view.target.progressBps / 100).toFixed(0)}% of the way there, on the confirmed books
+            {view.target.targetDate ? ` · aiming for ${when(view.target.targetDate)}` : ""}.
+          </p>
+        </Card>
+      ) : null}
 
       <div className="space-y-6">
         <Card>
@@ -130,9 +186,9 @@ export default async function MemberPage({ params }: { params: Promise<{ chamaId
                   label="For"
                   name="kind"
                   options={[
-                    { value: "contribution", label: "Contribution" },
-                    ...(chama.entryFeeMinor > 0 ? [{ value: "entry_fee", label: "Registration fee" }] : []),
-                    ...(standing.lateFeesOutstandingMinor > 0 ? [{ value: "late_fee", label: "Late fee" }] : []),
+                    ...(operating ? [{ value: "contribution", label: "Contribution" }] : []),
+                    ...(operating && chama.entryFeeMinor > 0 ? [{ value: "entry_fee", label: "Registration fee" }] : []),
+                    ...(operating && standing.lateFeesOutstandingMinor > 0 ? [{ value: "late_fee", label: "Late fee" }] : []),
                     ...(view.loans.some((l) => l.outstandingMinor > 0) ? [{ value: "loan_repayment", label: "Loan repayment" }] : []),
                   ]}
                 />
@@ -160,7 +216,7 @@ export default async function MemberPage({ params }: { params: Promise<{ chamaId
           </div>
         </Card>
 
-        {features.lending || features.withdrawals || features.welfare ? (
+        {operating && (features.lending || features.withdrawals || features.welfare) ? (
           <Card>
             <CardHeader
               title="Ask the group for money"
@@ -215,6 +271,7 @@ export default async function MemberPage({ params }: { params: Promise<{ chamaId
                 <p className="text-sm text-body">
                   {m(l.loan.amountMinor)} over {l.loan.loanMonths} months · repaid {m(l.repaidMinor)} of {m(l.totalMinor)} ·{" "}
                   <span className="font-semibold">{m(l.outstandingMinor)} left</span>
+                  {l.overdueMinor > 0 ? <> · <Badge tone="flame">{m(l.overdueMinor)} overdue</Badge></> : null}
                 </p>
                 <div className="mt-3 overflow-x-auto">
                   <table className="w-full text-xs">
@@ -245,10 +302,14 @@ export default async function MemberPage({ params }: { params: Promise<{ chamaId
             {proposals.map((p) => (
               <div key={p.id} className="space-y-2 px-5 py-4">
                 <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm font-medium text-body">{p.title}{p.kind === "amendment" ? " · amends the constitution" : ""}</p>
+                  <p className="text-sm font-medium text-body">{p.title}{PROPOSAL_LABEL[p.kind] ? ` · ${PROPOSAL_LABEL[p.kind]}` : ""}</p>
                   <StatusBadge status={p.status} />
                 </div>
                 {p.body ? <p className="text-sm text-muted">{p.body}</p> : null}
+                {p.payload?.candidate ? <p className="text-sm text-muted">Candidate: {nameOf(p.payload.candidate)}</p> : null}
+                {p.payload?.order ? (
+                  <p className="text-sm text-muted">New order: {p.payload.order.map((k, i) => `${i + 1}. ${nameOf(k)}`).join(" · ")}</p>
+                ) : null}
                 {p.amendmentBody ? (
                   <details className="text-xs text-muted"><summary className="cursor-pointer">Proposed constitution text</summary><p className="mt-2 whitespace-pre-line">{p.amendmentBody}</p></details>
                 ) : null}
@@ -265,16 +326,65 @@ export default async function MemberPage({ params }: { params: Promise<{ chamaId
               </div>
             ))}
           </div>
-          <details className="border-t border-line px-5 py-4">
-            <summary className="cursor-pointer text-sm font-medium text-accent">Put something to a vote</summary>
-            <ActionForm action={createProposalAction} submit="Propose" resetOnSuccess className="mt-4 space-y-3">
-              {hidden("chamaId", chamaId)}
-              <Field label="Title" name="title" required />
-              <TextAreaField label="Details" name="body" rows={2} />
-              <TextAreaField label="New constitution text (only if amending)" name="amendment" rows={4} />
-              <Field label="Open for days" name="days" type="number" defaultValue={7} min={1} max={30} />
-            </ActionForm>
-          </details>
+          <div className="divide-y divide-line border-t border-line">
+            <details className="px-5 py-4">
+              <summary className="cursor-pointer text-sm font-medium text-accent">Put a question to a vote</summary>
+              <ActionForm action={createProposalAction} submit="Propose" resetOnSuccess className="mt-4 space-y-3">
+                {hidden("chamaId", chamaId)}{hidden("kind", "general")}
+                <Field label="Question" name="title" required />
+                <TextAreaField label="Details" name="body" rows={2} />
+                <Field label="Open for days" name="days" type="number" defaultValue={7} min={1} max={30} />
+              </ActionForm>
+            </details>
+            <details className="px-5 py-4">
+              <summary className="cursor-pointer text-sm font-medium text-accent">Propose a constitution amendment</summary>
+              <ActionForm action={createProposalAction} submit="Propose amendment" className="mt-4 space-y-3">
+                {hidden("chamaId", chamaId)}{hidden("kind", "amendment")}
+                <Field label="Title" name="title" required placeholder="e.g. Raise the late fee" />
+                <TextAreaField label="Why" name="body" rows={2} />
+                <TextAreaField label="Full new constitution" name="amendment" rows={10} defaultValue={constitution.body} required />
+                <Field label="Open for days" name="days" type="number" defaultValue={7} min={1} max={30} />
+              </ActionForm>
+            </details>
+            <details className="px-5 py-4">
+              <summary className="cursor-pointer text-sm font-medium text-accent">Propose a new chairperson</summary>
+              <ActionForm action={createProposalAction} submit="Propose" className="mt-4 space-y-3">
+                {hidden("chamaId", chamaId)}{hidden("kind", "chair")}{hidden("title", "Elect a new chairperson")}
+                <SelectField
+                  label="Candidate"
+                  name="candidate"
+                  options={listMembers(chamaId).filter((x) => x.role !== "chairperson").map((x) => ({ value: x.key, label: x.name }))}
+                />
+                <TextAreaField label="Why" name="body" rows={2} />
+                <Field label="Open for days" name="days" type="number" defaultValue={7} min={1} max={30} />
+              </ActionForm>
+            </details>
+            {features.rotation && operating ? (
+              <details className="px-5 py-4">
+                <summary className="cursor-pointer text-sm font-medium text-accent">Propose a change to the payout order</summary>
+                <ActionForm action={createProposalAction} submit="Propose" className="mt-4 space-y-3">
+                  {hidden("chamaId", chamaId)}{hidden("kind", "payout_order")}{hidden("title", "Change the payout order")}
+                  <div className="grid grid-cols-2 gap-3">
+                    <SelectField label="Move" name="mover" options={listMembers(chamaId).map((x) => ({ value: x.key, label: x.name }))} />
+                    <Field label="To position" name="position" type="number" defaultValue={1} min={1} max={view.group.members} />
+                  </div>
+                  <TextAreaField label="Why" name="body" rows={2} />
+                  <Field label="Open for days" name="days" type="number" defaultValue={7} min={1} max={30} />
+                  <p className="text-xs text-faint">Whoever has already been paid this cycle isn&apos;t paid again; the new order decides who is next among the rest.</p>
+                </ActionForm>
+              </details>
+            ) : null}
+            {operating ? (
+              <details className="px-5 py-4">
+                <summary className="cursor-pointer text-sm font-medium text-flame">Propose dissolving the group</summary>
+                <ActionForm action={createProposalAction} submit="Put dissolution to a vote" tone="flame" className="mt-4 space-y-3">
+                  {hidden("chamaId", chamaId)}{hidden("kind", "dissolution")}{hidden("title", `Dissolve ${chama.name}`)}
+                  <TextAreaField label="Why" name="body" rows={2} required />
+                  <Field label="Open for days" name="days" type="number" defaultValue={14} min={1} max={30} />
+                </ActionForm>
+              </details>
+            ) : null}
+          </div>
         </Card>
 
         <Card>
@@ -318,6 +428,53 @@ export default async function MemberPage({ params }: { params: Promise<{ chamaId
           </div>
         )}
       </Card>
+
+      <Card>
+        <CardHeader
+          title="Your nominated beneficiary"
+          subtitle="Who should receive your share if you die. Seen only by you and the officers; the law of succession still applies."
+        />
+        <div className="p-5">
+          <ActionForm action={nomineeAction} submit="Save nominee" className="space-y-4">
+            {hidden("chamaId", chamaId)}
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Name" name="nomineeName" defaultValue={member.nominee?.name} placeholder="Leave blank to remove" />
+              <Field label="Phone" name="nomineePhone" defaultValue={member.nominee?.phone} />
+              <Field label="Relationship" name="nomineeRelation" defaultValue={member.nominee?.relation} placeholder="e.g. Spouse" />
+            </div>
+          </ActionForm>
+        </div>
+      </Card>
+
+      {operating ? (
+        <details
+          className="rounded-2xl border border-line bg-surface/80 px-5 py-4"
+          open={myRequests.some((r) => r.kind === "exit" && (r.status === "pending" || r.status === "approved"))}
+        >
+          <summary className="cursor-pointer text-sm font-medium text-flame">Leave this chama</summary>
+          <div className="mt-3 space-y-3 text-sm">
+            {view.exit.blockers.length ? (
+              <ul className="list-disc space-y-1 pl-5 text-muted">
+                {view.exit.blockers.map((b) => <li key={b}>{b}</li>)}
+              </ul>
+            ) : (
+              <>
+                <p className="text-muted">
+                  {view.exit.refundMinor > 0
+                    ? `You'd be paid ${m(view.exit.refundMinor)}, once ${chama.approvalsRequired} officers sign and the treasurer sends it.`
+                    : "Nothing is owed either way, so you'd leave straight away."}{" "}
+                  Your history stays on the group&apos;s books.
+                </p>
+                <ActionForm action={exitAction} submit="Leave the chama" tone="flame">
+                  {hidden("chamaId", chamaId)}
+                  <Field label="Reason (optional)" name="reason" />
+                  <div className="mt-3"><CheckField name="confirm" label="I understand I'm leaving this chama." /></div>
+                </ActionForm>
+              </>
+            )}
+          </div>
+        </details>
+      ) : null}
 
       <details className="rounded-2xl border border-line bg-surface/80 px-5 py-4">
         <summary className="cursor-pointer text-sm font-medium text-body">Constitution · version {constitution.version}</summary>

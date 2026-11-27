@@ -186,7 +186,8 @@ activity log.
 | `/chama/new` | Members | Start a group from one of 20 types; you become chairperson |
 | `/chama/join?code=` | Members | Read the constitution, accept that exact version, join |
 | `/chama/[id]` | Members | Your position: contributed, outstanding, available, your turn, loans, votes, history |
-| `/chama/[id]/books` | Officers and auditor | Confirm payments, sign and send money out, standing per member, roles, ledger, constitution history |
+| `/chama/[id]/books` | Officers and auditor | The group dashboard: confirm payments, sign and send money out, collections, statement, loan book, roles, ledger, winding up |
+| `/api/chama/[id]/statement.csv` | Members; `?scope=group` for officers | Statement from the confirmed ledger |
 
 **The app is the group's book, not a wallet.** It holds no funds and simulates
 no transfers. Money moves on M-Pesa, a bank or in cash at a meeting, and is
@@ -224,13 +225,51 @@ of savings and of what the group holds unrestricted, the emergency reserve
 (rounded up), and vote outcomes with quorum, threshold and early settlement.
 Money is integer minor units of the group's own currency.
 
-**Not built yet**, and should not be claimed until it is: a licensed payment
+**The group dashboard** (`/chama/[id]/books`, officers and auditor) puts the
+group's position on one page: confirmed balance, reserve and what is available;
+collection rate against what has fallen due; arrears per member; loans
+outstanding and overdue; the next 30 days of deadlines (contributions and loan
+installments); collections period by period; income and outflows by kind; the
+loan book; progress towards a savings target; and a downloadable statement.
+Members get their own statement from their position page. Both are CSV from the
+confirmed ledger, with spreadsheet-formula characters defused.
+
+**Notices** — a payment to check, a request to sign, a contribution due in three
+days, arrears, an overdue installment, a refused payment, money sent to you, a
+vote waiting, a new constitution to accept — are worked out from the books on
+every load rather than stored, so a reminder can never outlive the payment that
+settled it. Officers only see work they are actually allowed to do.
+
+**Votes that change something.** Besides general questions and amendments,
+members can vote in a new chairperson, change the merry-go-round order, or
+dissolve the group. The rotation pays whoever in the agreed order has not yet
+been paid this cycle, so changing the order or losing a member mid-cycle never
+pays anyone twice or skips anyone.
+
+**Leaving.** A member with nothing owed either way leaves at once. Otherwise
+their refund — savings, or in a merry-go-round what they paid in and have not
+had back — goes to the officers like any other payment, and they are marked as
+left when it is sent. A loan has to be cleared first, someone who has taken the
+pot and not paid in as much cannot walk away, and the chair has to be handed
+over by vote before the chair can leave. Members can nominate a beneficiary;
+the details are visible to officers but kept out of the audit trail.
+
+**Dissolving.** Once a dissolution vote carries, no contributions, loans or
+withdrawals are taken — only loan repayments. When every loan is repaid, the
+balance is split in proportion to savings (largest remainder, so the shares
+add up to the shilling) and each share is a payment signed like any other. The
+group closes itself when the books reach zero, and cannot be closed while a
+loan is still owed to it. When the money is going to the treasurer, the
+chairperson records it as sent — otherwise a treasurer's own share could never
+be paid.
+
+**Not built**, and should not be claimed until it is: a licensed payment
 partner (M-Pesa Daraja C2B/B2C, a bank) to collect and disburse automatically;
 investments, which must go through a licensed institution; OTP, KYC and
 document verification (sign-in here is still the demo described below);
-statements as downloads; notifications; member exit and dissolution flows;
-reordering the payout queue. The prompt this was built from was cut off at its
-section 8, so anything specified after that is not reflected here.
+push, SMS or email notifications (notices are in-app only). The prompt this was
+built from was cut off at the start of section 8, so section 8 was built from
+its heading and nothing after it is reflected here.
 
 ## Brand
 
@@ -390,7 +429,7 @@ capacity, the owner/network split and tracking without touching a database.
 ## Tests
 
 ```bash
-npm test          # 209 unit and integration tests, 9 suites
+npm test          # 230 unit and integration tests, 9 suites
 npm run typecheck
 npm run build
 ```

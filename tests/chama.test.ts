@@ -17,6 +17,14 @@ import {
   joinChama,
   listProposals,
   memberDashboard,
+  notificationsFor,
+  payoutQueue,
+  requestExit,
+  setNominee,
+  startDistribution,
+  closeChama,
+  getMember,
+  groupStatement,
   submitReceipt,
   whoFromActor,
   type ChamaWho,
@@ -26,7 +34,15 @@ import { db } from "@/lib/db";
 import {
   approvalPossible,
   approvalState,
+  categoryFor,
   CHAMA_CATEGORIES,
+  collectionsByPeriod,
+  distributionShares,
+  exitSettlement,
+  loanOverdue,
+  moveInOrder,
+  reorderAllowed,
+  targetProgressBps,
   dueDate,
   firstLiablePeriod,
   formatMoney,
@@ -422,7 +438,7 @@ describe("money out", () => {
   it("asks members to accept an amended constitution before they sign again", () => {
     const chama = setUp();
     for (const who of [amina, brian, chebet, dan]) contribute(chama.id, who);
-    const p = createProposal(chama.id, chebet, { title: "Raise the reserve", body: "", amendmentBody: "New rules", days: 7 });
+    const p = createProposal(chama.id, chebet, { kind: "amendment", title: "Raise the reserve", body: "", amendmentBody: "New rules", days: 7 });
     castVote(p, amina, "yes");
     castVote(p, brian, "yes");
     castVote(p, chebet, "yes");
@@ -453,5 +469,236 @@ describe("a merry-go-round", () => {
 
     const dash = groupDashboard(chama.id)!;
     expect(dash.schedule[0].memberKey).toBe(brian.key);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Winding up, leaving, reordering — pure rules
+ * ------------------------------------------------------------------ */
+
+describe("splitting a balance between members", () => {
+  it("always adds back to the total exactly", () => {
+    for (const total of [0, 1, 7, 100, 99_999, 1_000_003]) {
+      const shares = distributionShares(total, [
+        { key: "a", amountMinor: 3 },
+        { key: "b", amountMinor: 3 },
+        { key: "c", amountMinor: 3 },
+      ]);
+      expect(shares.reduce((s, x) => s + x.amountMinor, 0)).toBe(total);
+    }
+  });
+
+  it("follows savings, giving leftover units to the largest fractions", () => {
+    expect(distributionShares(100, [{ key: "a", amountMinor: 1 }, { key: "b", amountMinor: 2 }])).toEqual([
+      { key: "a", amountMinor: 33 },
+      { key: "b", amountMinor: 67 },
+    ]);
+  });
+
+  it("splits equally when nobody has savings on the books", () => {
+    expect(distributionShares(10, [{ key: "a", amountMinor: 0 }, { key: "b", amountMinor: 0 }]).map((s) => s.amountMinor)).toEqual([5, 5]);
+  });
+});
+
+describe("what a leaver is owed", () => {
+  it("is their savings in a savings group", () => {
+    expect(exitSettlement(categoryFor("asca").features, { savingsMinor: 500, contributedMinor: 900, receivedMinor: 0 })).toEqual({ refundMinor: 500, owesMinor: 0 });
+  });
+
+  it("is what they paid and haven't had back in a merry-go-round", () => {
+    const rosca = categoryFor("rosca").features;
+    expect(exitSettlement(rosca, { savingsMinor: 0, contributedMinor: 300, receivedMinor: 0 })).toEqual({ refundMinor: 300, owesMinor: 0 });
+    expect(exitSettlement(rosca, { savingsMinor: 0, contributedMinor: 300, receivedMinor: 1000 })).toEqual({ refundMinor: 0, owesMinor: 700 });
+  });
+});
+
+describe("changing the payout order", () => {
+  it("accepts only a reordering of the same people", () => {
+    expect(reorderAllowed(["a", "b", "c"], ["c", "a", "b"], 0)).toBe(true);
+    expect(reorderAllowed(["a", "b", "c"], ["a", "b"], 0)).toBe(false);
+    expect(reorderAllowed(["a", "b", "c"], ["a", "a", "b"], 0)).toBe(false);
+    expect(reorderAllowed(["a", "b", "c"], ["a", "b", "z"], 0)).toBe(false);
+  });
+
+  it("can pin the positions already paid this cycle", () => {
+    expect(reorderAllowed(["a", "b", "c"], ["b", "a", "c"], 1)).toBe(false);
+    expect(reorderAllowed(["a", "b", "c"], ["a", "c", "b"], 1)).toBe(true);
+  });
+
+  it("moves one member and shifts the rest", () => {
+    expect(moveInOrder(["a", "b", "c", "d"], "d", 0)).toEqual(["d", "a", "b", "c"]);
+    expect(moveInOrder(["a", "b", "c", "d"], "a", 9)).toEqual(["b", "c", "d", "a"]);
+  });
+});
+
+describe("collections and overdue loans", () => {
+  it("counts who covered each period, oldest first", () => {
+    const rows = collectionsByPeriod("2026-01-01", "monthly", 100, "2026-03-15", [
+      { joinedOn: "2026-01-01", paidMinor: 300 },
+      { joinedOn: "2026-01-01", paidMinor: 100 },
+      { joinedOn: "2026-02-10", paidMinor: 0 },
+    ]);
+    expect(rows.map((r) => [r.liable, r.paidUp])).toEqual([[2, 2], [2, 1], [3, 1]]);
+  });
+
+  it("calls installments overdue only once their date has passed", () => {
+    const schedule = loanSchedule({ principalMinor: 300, monthlyRateBps: 0, months: 3, startOn: "2026-01-01" });
+    expect(loanOverdue(schedule, 0, "2026-02-01")).toEqual({ overdueMinor: 0, installments: 0 });
+    expect(loanOverdue(schedule, 0, "2026-03-02")).toEqual({ overdueMinor: 200, installments: 2 });
+    expect(loanOverdue(schedule, 150, "2026-03-02")).toEqual({ overdueMinor: 50, installments: 1 });
+  });
+
+  it("caps target progress at 100%", () => {
+    expect(targetProgressBps(500, 1000)).toBe(5000);
+    expect(targetProgressBps(5000, 1000)).toBe(10_000);
+    expect(targetProgressBps(5000, 0)).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Against the database
+ * ------------------------------------------------------------------ */
+
+const vote = (chamaId: string, proposal: string, voters: ChamaWho[]) => voters.forEach((v) => castVote(proposal, v, "yes"));
+
+describe("electing a chair, reordering, leaving", () => {
+  it("hands the chair over only when a vote carries", () => {
+    const chama = setUp();
+    const p = createProposal(chama.id, dan, { kind: "chair", title: "New chair", body: "", candidate: chebet.key, days: 7 });
+    vote(chama.id, p, [amina, brian, dan]);
+    expect(getMember(chama.id, chebet.key)!.role).toBe("chairperson");
+    expect(getMember(chama.id, amina.key)!.role).toBe("member");
+  });
+
+  it("reorders a merry-go-round without paying anyone twice", () => {
+    const chama = setUp({ category: "rosca" });
+    assignRole(chama.id, amina, dan.key, "loan_officer");
+    for (const who of [amina, brian, chebet, dan]) contribute(chama.id, who);
+    const first = createRequest(chama.id, brian, { kind: "payout", reason: "Round 1" });
+    expect(first.beneficiary).toBe(amina.key);
+
+    // Put Amina — already paid this cycle — back at the front, and Dan second.
+    const order = [amina.key, dan.key, brian.key, chebet.key];
+    const p = createProposal(chama.id, chebet, { kind: "payout_order", title: "Reorder", body: "", order, days: 7 });
+    vote(chama.id, p, [amina, brian, chebet]);
+    expect(payoutQueue(chama.id)).toEqual([dan.key, brian.key, chebet.key, amina.key]);
+  });
+
+  it("lets a member with nothing owed leave at once, and refunds a saver through signatures", () => {
+    const chama = setUp();
+    for (const who of [amina, brian, chebet, dan]) contribute(chama.id, who);
+    expect(() => requestExit(chama.id, amina, "")).toThrow(/chair/);
+
+    const r = requestExit(chama.id, dan, "Moving to Kisumu")!;
+    expect(r.kind).toBe("exit");
+    expect(r.amountMinor).toBe(100_000);
+    decideRequest(r.id, amina, "approve");
+    decideRequest(r.id, chebet, "approve");
+    executeRequest(r.id, brian, "mpesa", code());
+    expect(getMember(chama.id, dan.key)!.status).toBe("exited");
+    expect(groupBalance(chama.id)).toBe(300_000);
+  });
+
+  it("won't let a borrower walk away from a loan", () => {
+    const chama = setUp();
+    for (const who of [amina, brian, chebet, dan]) contribute(chama.id, who);
+    const loan = createRequest(chama.id, dan, { kind: "loan", amountMinor: 50_000, reason: "Stock", loanMonths: 2 });
+    decideRequest(loan.id, amina, "approve");
+    decideRequest(loan.id, chebet, "approve");
+    executeRequest(loan.id, brian, "mpesa", code());
+    expect(() => requestExit(chama.id, dan, "")).toThrow(/loan/);
+  });
+
+  it("keeps a nominee's details out of the audit trail", () => {
+    const chama = setUp();
+    setNominee(chama.id, dan, { name: "Grace Mwangi", phone: "+254711000111", relation: "Spouse" });
+    expect(getMember(chama.id, dan.key)!.nominee).toEqual({ name: "Grace Mwangi", phone: "+254711000111", relation: "Spouse" });
+    const leaked = db().prepare(`SELECT COUNT(*) AS n FROM audit_events WHERE summary LIKE '%Grace%' OR detail LIKE '%Grace%'`).get() as { n: number };
+    expect(leaked.n).toBe(0);
+  });
+});
+
+describe("dissolving a chama", () => {
+  it("stops new money, pays the balance out by savings, and closes at zero", () => {
+    const chama = setUp();
+    contribute(chama.id, amina, 100_000);
+    contribute(chama.id, brian, 200_000);
+    contribute(chama.id, chebet, 100_000);
+    contribute(chama.id, dan, 100_000);
+
+    const p = createProposal(chama.id, chebet, { kind: "dissolution", title: "Wind up", body: "We're done", days: 7 });
+    vote(chama.id, p, [amina, brian, chebet]);
+    expect(getChama(chama.id)!.status).toBe("dissolving");
+    expect(() =>
+      submitReceipt(chama.id, dan, { memberKey: dan.key, kind: "contribution", amountMinor: 100_000, rail: "mpesa", reference: code() }),
+    ).toThrow(/dissolve/);
+    expect(() => createRequest(chama.id, dan, { kind: "withdrawal", amountMinor: 1, reason: "Mine" })).toThrow(/dissolve/);
+
+    // Appoint enough independent signers for each share.
+    assignRole(chama.id, amina, dan.key, "loan_officer");
+    const shares = startDistribution(chama.id, brian);
+    expect(shares.map((r) => r.amountMinor).sort((a, b) => a - b)).toEqual([100_000, 100_000, 100_000, 200_000]);
+
+    for (const r of shares) {
+      const signers = [amina, chebet, dan, brian].filter((x) => x.key !== r.beneficiary && x.key !== brian.key).slice(0, 2);
+      for (const s of signers) decideRequest(r.id, s, "approve");
+      // The treasurer can't send their own share, so the chair records that one.
+      const sender = r.beneficiary === brian.key ? amina : brian;
+      if (r.beneficiary === brian.key) expect(() => executeRequest(r.id, brian, "bank", `DIST-${r.id}`)).toThrow(/coming to you/);
+      executeRequest(r.id, sender, "bank", `DIST-${r.id}`);
+    }
+    expect(groupBalance(chama.id)).toBe(0);
+    expect(groupStatement(chama.id).find((l) => l.kind === "distribution")!.totalMinor).toBe(500_000);
+    expect(getChama(chama.id)!.status).toBe("dissolved");
+  });
+
+  it("won't let the chair send money to anyone but the treasurer", () => {
+    const chama = setUp();
+    for (const who of [amina, brian, chebet, dan]) contribute(chama.id, who);
+    const w = createRequest(chama.id, dan, { kind: "withdrawal", amountMinor: 50_000, reason: "Rent" });
+    decideRequest(w.id, amina, "approve");
+    decideRequest(w.id, chebet, "approve");
+    expect(() => executeRequest(w.id, amina, "mpesa", code())).toThrow(/treasurer/);
+  });
+});
+
+describe("notifications", () => {
+  it("tells officers what they can act on, and nothing they can't", () => {
+    const chama = setUp();
+    submitReceipt(chama.id, dan, { memberKey: dan.key, kind: "contribution", amountMinor: 100_000, rail: "mpesa", reference: code() });
+    const forBrian = notificationsFor(brian.key, "2025-12-20").filter((n) => n.chamaId === chama.id);
+    expect(forBrian.some((n) => /to check/.test(n.text))).toBe(true);
+    const forDan = notificationsFor(dan.key, "2025-12-20").filter((n) => n.chamaId === chama.id);
+    expect(forDan.some((n) => /to check/.test(n.text))).toBe(false);
+  });
+
+  it("reminds a member when a contribution is close, and stops once they're behind it", () => {
+    const chama = setUp();
+    const soon = notificationsFor(dan.key, "2025-12-30").filter((n) => n.chamaId === chama.id);
+    expect(soon.some((n) => /due in 2 days/.test(n.text))).toBe(true);
+    const late = notificationsFor(dan.key, "2026-01-10").filter((n) => n.chamaId === chama.id);
+    expect(late.some((n) => /behind by/.test(n.text))).toBe(true);
+  });
+});
+
+describe("closing a dissolved chama", () => {
+  it("won't write off a loan by closing with it still owed", () => {
+    const chama = setUp();
+    for (const who of [amina, brian, chebet, dan]) contribute(chama.id, who);
+    const loan = createRequest(chama.id, dan, { kind: "loan", amountMinor: 300_000, reason: "Stock", loanMonths: 3 });
+    decideRequest(loan.id, amina, "approve");
+    decideRequest(loan.id, chebet, "approve");
+    executeRequest(loan.id, brian, "mpesa", code());
+    // Brian takes the rest out, so the books read zero while Dan still owes.
+    const w = createRequest(chama.id, brian, { kind: "withdrawal", amountMinor: 90_000, reason: "Fees" });
+    decideRequest(w.id, amina, "approve");
+    decideRequest(w.id, chebet, "approve");
+    executeRequest(w.id, amina, "mpesa", code());
+    const p = createProposal(chama.id, chebet, { kind: "dissolution", title: "Wind up", body: "", days: 7 });
+    vote(chama.id, p, [amina, brian, chebet]);
+    expect(groupBalance(chama.id)).toBe(10_000);
+    expect(() => startDistribution(chama.id, brian)).toThrow(/still to be repaid/);
+    expect(() => closeChama(chama.id, amina)).toThrow();
+    expect(getChama(chama.id)!.status).toBe("dissolving");
   });
 });

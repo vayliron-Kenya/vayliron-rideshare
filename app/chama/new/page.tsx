@@ -88,12 +88,28 @@ export default async function NewChamaPage() {
         </Card>
 
         <Card>
+          <CardHeader title="Goal" subtitle="Optional. Every member sees the group's progress towards it." />
+          <div className="grid gap-4 p-5 sm:grid-cols-2">
+            <Field label="Savings target" name="savingsTarget" defaultValue="0" hint="0 for no target" />
+            <Field label="Target date" name="targetDate" type="date" />
+          </div>
+        </Card>
+
+        <Card>
           <CardHeader title="Safeguards and lending" subtitle="No single officer can release money. These settings decide how many must agree." />
           <div className="grid gap-4 p-5 sm:grid-cols-2">
             <Field label="Officer signatures to release money" name="approvalsRequired" type="number" defaultValue={2} min={2} max={10} hint="Never the requester or recipient." />
             <Field label="Emergency reserve %" name="reservePct" type="number" defaultValue={10} min={0} max={100} step="0.5" />
             <Field label="Loan rate % per month (flat)" name="loanRatePct" type="number" defaultValue={1} min={0} max={10} step="0.1" hint="Only used by groups that lend." />
             <Field label="Borrow up to × savings" name="loanMultiple" type="number" defaultValue={3} min={0} max={10} step="0.5" />
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Voting" subtitle="Used for every group decision: amendments, a new chair, the payout order, dissolving." />
+          <div className="grid gap-4 p-5 sm:grid-cols-2">
+            <Field label="Quorum % of members" name="quorumPct" type="number" defaultValue={50} min={1} max={100} />
+            <Field label="Yes % needed to carry" name="thresholdPct" type="number" defaultValue={66.67} min={50.01} max={100} step="0.01" hint="Of those voting yes or no. More than half." />
           </div>
         </Card>
       </ActionForm>
