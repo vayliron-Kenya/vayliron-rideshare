@@ -83,6 +83,14 @@ export default async function DrivePage({ searchParams }: PageProps) {
             {option === today ? "Today" : formatServiceDate(option)}
           </Link>
         ))}
+        {driver ? (
+          <Link
+            href="/chama"
+            className="ml-auto rounded-lg border border-edge px-3 py-1.5 text-xs text-muted transition-colors hover:text-body"
+          >
+            Chama
+          </Link>
+        ) : null}
       </div>
 
       {stats ? (

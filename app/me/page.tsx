@@ -144,6 +144,13 @@ export default async function MePage() {
         </Link>
       ) : null}
 
+      <Link
+        href="/chama"
+        className="flex min-h-14 w-full items-center justify-center rounded-2xl border-2 border-edge px-6 text-base font-semibold text-body transition-colors hover:border-brand hover:text-accent"
+      >
+        Your chamas
+      </Link>
+
       <form action={signOutAction}>
         <button
           type="submit"

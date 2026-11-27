@@ -296,3 +296,180 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_events(at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_subject ON audit_events(subject_kind, subject_id, at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_company ON audit_events(company_id, at DESC);
+
+-- ==================================================================
+-- Chama — community savings, rotation, lending and welfare groups
+-- ==================================================================
+--
+-- A chama's members are people who already have a Vayliron sign-in — a rider,
+-- a driver, a bus owner or a member of staff — so a member is keyed by the
+-- principal they sign in as ("employee:emp_12"), not by a new account table.
+--
+-- Money is integer minor units of the group's own currency. The app is the
+-- group's book, not a wallet: it holds no funds. Money moves on M-Pesa, a bank
+-- or in cash at a meeting, and every movement is recorded here against the
+-- reference that rail issued, by one officer and confirmed by another.
+
+CREATE TABLE IF NOT EXISTS chamas (
+  id                 TEXT PRIMARY KEY,
+  name               TEXT NOT NULL,
+  description        TEXT NOT NULL DEFAULT '',
+  category           TEXT NOT NULL,
+  country            TEXT NOT NULL DEFAULT 'KE',
+  currency           TEXT NOT NULL DEFAULT 'KES',
+  visibility         TEXT NOT NULL DEFAULT 'private' CHECK (visibility IN ('private', 'public')),
+  invite_code        TEXT NOT NULL UNIQUE,
+  min_members        INTEGER NOT NULL CHECK (min_members >= 2),
+  max_members        INTEGER NOT NULL CHECK (max_members >= min_members AND max_members <= 500),
+  entry_fee_minor    INTEGER NOT NULL DEFAULT 0 CHECK (entry_fee_minor >= 0),
+  contribution_minor INTEGER NOT NULL CHECK (contribution_minor > 0),
+  frequency          TEXT NOT NULL CHECK (frequency IN ('weekly', 'fortnightly', 'monthly')),
+  anchor_date        TEXT NOT NULL,           -- first contribution due date, YYYY-MM-DD
+  grace_days         INTEGER NOT NULL DEFAULT 3 CHECK (grace_days BETWEEN 0 AND 30),
+  late_fee_minor     INTEGER NOT NULL DEFAULT 0 CHECK (late_fee_minor >= 0),
+  -- No one officer releases money: at least two signatures, always.
+  approvals_required INTEGER NOT NULL DEFAULT 2 CHECK (approvals_required >= 2),
+  reserve_bps        INTEGER NOT NULL DEFAULT 1000 CHECK (reserve_bps BETWEEN 0 AND 10000),
+  loan_rate_bps      INTEGER NOT NULL DEFAULT 100 CHECK (loan_rate_bps BETWEEN 0 AND 1000),
+  loan_multiple_tenths INTEGER NOT NULL DEFAULT 30 CHECK (loan_multiple_tenths BETWEEN 0 AND 100),
+  quorum_bps         INTEGER NOT NULL DEFAULT 5000 CHECK (quorum_bps BETWEEN 1 AND 10000),
+  threshold_bps      INTEGER NOT NULL DEFAULT 6667 CHECK (threshold_bps BETWEEN 5001 AND 10000),
+  status             TEXT NOT NULL DEFAULT 'forming' CHECK (status IN ('forming', 'active', 'dissolved')),
+  created_by         TEXT NOT NULL,
+  created_at         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS chama_members (
+  chama_id         TEXT NOT NULL REFERENCES chamas(id) ON DELETE CASCADE,
+  member_key       TEXT NOT NULL,            -- "<principal kind>:<id>"
+  name             TEXT NOT NULL,
+  role             TEXT NOT NULL DEFAULT 'member'
+                   CHECK (role IN ('chairperson', 'treasurer', 'secretary', 'loan_officer', 'auditor', 'member')),
+  status           TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'exited')),
+  joined_on        TEXT NOT NULL,            -- YYYY-MM-DD, decides the first contribution owed
+  payout_position  INTEGER,                  -- place in a merry-go-round queue
+  acknowledged_version INTEGER NOT NULL,     -- the constitution version they accepted
+  PRIMARY KEY (chama_id, member_key)
+);
+CREATE INDEX IF NOT EXISTS idx_chama_members_key ON chama_members(member_key);
+
+-- Every version is kept. An amendment adds a row; nothing rewrites one.
+CREATE TABLE IF NOT EXISTS chama_constitutions (
+  chama_id   TEXT NOT NULL REFERENCES chamas(id) ON DELETE CASCADE,
+  version    INTEGER NOT NULL,
+  body       TEXT NOT NULL,
+  adopted_at TEXT NOT NULL,
+  adopted_by TEXT NOT NULL,                 -- a member key, or "vote:<proposal id>"
+  PRIMARY KEY (chama_id, version)
+);
+
+-- A payment a member says they made, waiting for a second officer.
+CREATE TABLE IF NOT EXISTS chama_receipts (
+  id           TEXT PRIMARY KEY,
+  chama_id     TEXT NOT NULL REFERENCES chamas(id) ON DELETE CASCADE,
+  member_key   TEXT NOT NULL,
+  kind         TEXT NOT NULL CHECK (kind IN ('contribution', 'entry_fee', 'late_fee', 'loan_repayment')),
+  amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+  rail         TEXT NOT NULL CHECK (rail IN ('mpesa', 'bank', 'cash')),
+  reference    TEXT NOT NULL,               -- M-Pesa code, bank slip, meeting minute ref
+  loan_id      TEXT,
+  submitted_by TEXT NOT NULL,
+  submitted_at TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'rejected')),
+  decided_by   TEXT,
+  decided_at   TEXT,
+  note         TEXT,
+  -- The same M-Pesa code cannot be counted twice in one group.
+  UNIQUE (chama_id, rail, reference)
+);
+
+-- Money out: a payout, a loan or a withdrawal. Never executed on one say-so.
+CREATE TABLE IF NOT EXISTS chama_requests (
+  id            TEXT PRIMARY KEY,
+  chama_id      TEXT NOT NULL REFERENCES chamas(id) ON DELETE CASCADE,
+  kind          TEXT NOT NULL CHECK (kind IN ('payout', 'loan', 'withdrawal', 'welfare')),
+  beneficiary   TEXT NOT NULL,
+  amount_minor  INTEGER NOT NULL CHECK (amount_minor > 0),
+  reason        TEXT NOT NULL,
+  round         INTEGER,                    -- the merry-go-round round a payout settles
+  loan_rate_bps INTEGER,
+  loan_months   INTEGER,
+  requested_by  TEXT NOT NULL,
+  requested_at  TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'approved', 'rejected', 'executed', 'withdrawn')),
+  executed_by   TEXT,
+  executed_at   TEXT,
+  rail          TEXT CHECK (rail IN ('mpesa', 'bank', 'cash')),
+  reference     TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_chama_round_payout
+  ON chama_requests(chama_id, round) WHERE kind = 'payout' AND status NOT IN ('rejected', 'withdrawn');
+
+CREATE TABLE IF NOT EXISTS chama_approvals (
+  request_id TEXT NOT NULL REFERENCES chama_requests(id) ON DELETE CASCADE,
+  approver   TEXT NOT NULL,
+  decision   TEXT NOT NULL CHECK (decision IN ('approve', 'reject')),
+  at         TEXT NOT NULL,
+  PRIMARY KEY (request_id, approver)
+);
+
+-- The group's books. Written only when a second person has confirmed the
+-- money moved, and never changed afterwards: a correction is a new entry.
+CREATE TABLE IF NOT EXISTS chama_ledger (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  chama_id     TEXT NOT NULL REFERENCES chamas(id),
+  member_key   TEXT NOT NULL,
+  kind         TEXT NOT NULL CHECK (kind IN (
+                 'contribution', 'entry_fee', 'late_fee', 'loan_repayment',
+                 'payout', 'loan_disbursement', 'withdrawal', 'welfare')),
+  direction    TEXT NOT NULL CHECK (direction IN ('in', 'out')),
+  amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+  rail         TEXT NOT NULL,
+  reference    TEXT NOT NULL,
+  source_id    TEXT NOT NULL,               -- the receipt or request it settles
+  loan_id      TEXT,
+  recorded_by  TEXT NOT NULL,
+  confirmed_by TEXT NOT NULL CHECK (confirmed_by <> recorded_by),
+  at           TEXT NOT NULL,
+  UNIQUE (source_id)
+);
+CREATE INDEX IF NOT EXISTS idx_chama_ledger ON chama_ledger(chama_id, member_key, at);
+
+CREATE TRIGGER IF NOT EXISTS chama_ledger_no_update
+  BEFORE UPDATE ON chama_ledger
+  BEGIN SELECT RAISE(ABORT, 'chama ledger entries are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS chama_ledger_no_delete
+  BEFORE DELETE ON chama_ledger
+  BEGIN SELECT RAISE(ABORT, 'chama ledger entries are append-only'); END;
+
+CREATE TABLE IF NOT EXISTS chama_proposals (
+  id             TEXT PRIMARY KEY,
+  chama_id       TEXT NOT NULL REFERENCES chamas(id) ON DELETE CASCADE,
+  title          TEXT NOT NULL,
+  body           TEXT NOT NULL,
+  kind           TEXT NOT NULL CHECK (kind IN ('general', 'amendment')),
+  amendment_body TEXT,
+  created_by     TEXT NOT NULL,
+  created_at     TEXT NOT NULL,
+  closes_at      TEXT NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'carried', 'defeated', 'no_quorum')),
+  closed_at      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS chama_votes (
+  proposal_id TEXT NOT NULL REFERENCES chama_proposals(id) ON DELETE CASCADE,
+  member_key  TEXT NOT NULL,
+  choice      TEXT NOT NULL CHECK (choice IN ('yes', 'no', 'abstain')),
+  at          TEXT NOT NULL,
+  PRIMARY KEY (proposal_id, member_key)
+);
+
+CREATE TABLE IF NOT EXISTS chama_announcements (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  chama_id    TEXT NOT NULL REFERENCES chamas(id) ON DELETE CASCADE,
+  author_key  TEXT NOT NULL,
+  author_name TEXT NOT NULL,
+  body        TEXT NOT NULL,
+  at          TEXT NOT NULL
+);

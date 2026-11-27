@@ -171,6 +171,67 @@ table row, with two buttons under them. A rejection has to carry a reason, and
 the owner reads that exact sentence on their own screen — being told no with no
 reason leaves nothing to fix. The board carries a count of what is waiting.
 
+## Chama — community savings groups
+
+`/chama` is a sixth surface on the same sign-in: savings groups, merry-go-rounds,
+table banking and welfare funds for anyone who already signs in — a rider, a
+driver, a bus owner. A member is keyed by the principal they sign in as, so
+there is no second account to create, and a chama's audit entries are stripped
+of the employer so a rider's savings group never appears in their HR team's
+activity log.
+
+| Route | Who | What |
+| --- | --- | --- |
+| `/chama` | Members | Your groups, join by invitation code. Vayliron staff get a read-only compliance list instead |
+| `/chama/new` | Members | Start a group from one of 20 types; you become chairperson |
+| `/chama/join?code=` | Members | Read the constitution, accept that exact version, join |
+| `/chama/[id]` | Members | Your position: contributed, outstanding, available, your turn, loans, votes, history |
+| `/chama/[id]/books` | Officers and auditor | Confirm payments, sign and send money out, standing per member, roles, ledger, constitution history |
+
+**The app is the group's book, not a wallet.** It holds no funds and simulates
+no transfers. Money moves on M-Pesa, a bank or in cash at a meeting, and is
+entered against the reference that rail issued — an M-Pesa code is checked for
+shape and can only be counted once per group. Every balance shown is the sum of
+confirmed ledger entries; projections (your turn in a merry-go-round, the pot
+you would receive) are drawn dashed and labelled as projected.
+
+**No one person moves the group's money.**
+
+- Money in is entered by one person and confirmed by a treasurer or chairperson
+  who is neither the payer nor whoever entered it. Only then is it on the books.
+- Money out — a round's payout, a loan, a withdrawal, welfare support — needs
+  at least two officer signatures (the group can require more, never fewer),
+  none from the requester or the recipient. The treasurer then records the
+  rail's reference, and cannot send money to themselves. A request the group
+  does not have enough independent officers to approve is refused up front.
+- The ledger is append-only, enforced by SQLite triggers rather than
+  convention, and every row carries both who recorded it and who confirmed it
+  (a `CHECK` makes them differ).
+- The chairperson assigns roles but cannot change their own; the chair is
+  changed by vote. An auditor reads everything and signs nothing. Vayliron
+  staff can see every group's book balance and cannot sign or record anything.
+
+**Constitutions** are generated from the group's rules as plain-language
+templates (and say they are not legal advice). They change only by a vote that
+carries an amendment; each version is kept, and officers must accept the new
+version before they can confirm or sign again.
+
+**The arithmetic** (`lib/domain/chama.ts`) is pure and tested: the contribution
+calendar (month-end dates clamp rather than spill), arrears applied oldest
+period first with a grace period before anything is late, merry-go-round order,
+flat-rate loan schedules that always sum exactly, a loan ceiling of a multiple
+of savings and of what the group holds unrestricted, the emergency reserve
+(rounded up), and vote outcomes with quorum, threshold and early settlement.
+Money is integer minor units of the group's own currency.
+
+**Not built yet**, and should not be claimed until it is: a licensed payment
+partner (M-Pesa Daraja C2B/B2C, a bank) to collect and disburse automatically;
+investments, which must go through a licensed institution; OTP, KYC and
+document verification (sign-in here is still the demo described below);
+statements as downloads; notifications; member exit and dissolution flows;
+reordering the payout queue. The prompt this was built from was cut off at its
+section 8, so anything specified after that is not reflected here.
+
 ## Brand
 
 The palette is taken from vayliron.com rather than eyeballed, and the site
@@ -329,7 +390,7 @@ capacity, the owner/network split and tracking without touching a database.
 ## Tests
 
 ```bash
-npm test          # 166 unit and integration tests, 8 suites
+npm test          # 209 unit and integration tests, 9 suites
 npm run typecheck
 npm run build
 ```

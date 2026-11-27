@@ -29,6 +29,7 @@ function linksFor(props: NavProps): NavLink[] {
       { href: "/ops/fleet", label: "Fleet" },
       { href: "/ops/clients", label: "Clients" },
       { href: "/ops/audit", label: "Audit" },
+      { href: "/chama", label: "Chamas" },
     ];
     if (props.isNetworkAdmin) links.push({ href: "/ops/network", label: "Network" });
     return links;
@@ -42,6 +43,7 @@ function linksFor(props: NavProps): NavLink[] {
     return [
       { href: "/fleet", label: "My buses" },
       { href: "/fleet/earnings", label: "Earnings" },
+      { href: "/chama", label: "Chama" },
     ];
   }
 

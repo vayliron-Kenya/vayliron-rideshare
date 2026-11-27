@@ -29,7 +29,8 @@ export type SubjectKind =
   | "route"
   | "stop"
   | "incident"
-  | "owner";
+  | "owner"
+  | "chama";
 
 export interface AuditEvent {
   id: number;
